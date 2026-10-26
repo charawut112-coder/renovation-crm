@@ -1,7 +1,14 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, LayoutGrid, Building2, Users, MessageCircle } from "lucide-react";
+import {
+  Home,
+  LayoutGrid,
+  Building2,
+  Users,
+  MessageCircle,
+  Headset,
+} from "lucide-react";
 import clsx from "clsx";
 
 const nav = [
@@ -9,6 +16,7 @@ const nav = [
   { href: "/pipeline", label: "Pipeline", icon: LayoutGrid },
   { href: "/properties", label: "บ้านทั้งหมด", icon: Building2 },
   { href: "/customers", label: "ลูกค้า", icon: Users },
+  { href: "/after-sales", label: "หลังการขาย", icon: Headset },
   { href: "/chat", label: "Lead Agent (LINE)", icon: MessageCircle },
 ];
 
@@ -42,7 +50,7 @@ export default function Sidebar() {
         })}
       </nav>
       <div className="p-4 text-xs text-brand-200 border-t border-brand-500">
-        MVP v0.1 · AI Agent Ready
+        MVP v0.2 · After-Sales
       </div>
     </aside>
   );
