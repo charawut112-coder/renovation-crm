@@ -16,6 +16,7 @@ import {
   canAdvance,
   appendStatusLog,
 } from "@/lib/checklist";
+import { createAfterSalesPackage } from "@/lib/aftersales";
 import StatusSelect from "@/components/StatusSelect";
 
 type PropWithCheck = Property & { checklistDone?: string[] };
@@ -90,6 +91,13 @@ export default function PipelinePage() {
       const next = prev.map((p) => {
         if (p.id !== id) return p;
         appendStatusLog(p, p.status, status);
+        if (status === "ส่งมอบให้ลูกค้า" || status === "หลังการขาย") {
+          createAfterSalesPackage({
+            propertyId: p.id,
+            propertyCode: p.code,
+            customerName: "ลูกค้าผู้รับมอบ",
+          });
+        }
         return {
           ...p,
           status,
