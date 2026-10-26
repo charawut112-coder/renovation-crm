@@ -20,18 +20,20 @@ export default function PropertiesPage() {
   }, []);
 
   function updateStatus(id: string, status: PropertyStatus) {
-    setProperties((prev) => {
-      const next = prev.map((p) =>
-        p.id === id
-          ? { ...p, status, progress: progressFromStatus(status) }
-          : p
-      );
-      saveProperties(next);
-      const code = next.find((p) => p.id === id)?.code;
-      setToast(`${code} → ${status}`);
-      setTimeout(() => setToast(null), 2500);
-      return next;
-    });
+    const current = properties.find((p) => p.id === id);
+    if (!current || current.status === status) return;
+    const next = properties.map((p) =>
+      p.id === id ? { ...p, status, progress: progressFromStatus(status) } : p
+    );
+    const created = saveProperties(next);
+    const pkg = created.find((item) => item.propertyId === id);
+    setProperties(next);
+    setToast(
+      pkg
+        ? `${current.code} → ${status} · สร้าง Warranty ให้ ${pkg.customerName}`
+        : `${current.code} → ${status}`
+    );
+    setTimeout(() => setToast(null), 2500);
   }
 
   function resetData() {
@@ -65,12 +67,13 @@ export default function PropertiesPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+        <table className="w-full text-sm min-w-[760px]">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="text-left px-4 py-3 font-medium">รหัส</th>
               <th className="text-left px-4 py-3 font-medium">ที่อยู่</th>
+              <th className="text-left px-4 py-3 font-medium">ลูกค้า</th>
               <th className="text-left px-4 py-3 font-medium">สถานะ</th>
               <th className="text-right px-4 py-3 font-medium">ต้นทุน</th>
               <th className="text-right px-4 py-3 font-medium">ราคาขาย</th>
@@ -85,6 +88,7 @@ export default function PropertiesPage() {
                   <div>{p.address}</div>
                   <div className="text-xs text-slate-400">{p.district}</div>
                 </td>
+                <td className="px-4 py-3">{p.customerName}</td>
                 <td className="px-4 py-3">
                   <StatusSelect
                     value={p.status}

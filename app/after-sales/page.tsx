@@ -21,7 +21,7 @@ import {
   type TicketPriority,
   type TicketStatus,
 } from "@/lib/aftersales";
-import { loadProperties } from "@/lib/data";
+import { isHandoverStatus, loadProperties, resolveCustomerName } from "@/lib/data";
 import NewTicketModal from "@/components/NewTicketModal";
 
 type Tab = "warranties" | "tickets" | "followups";
@@ -114,24 +114,26 @@ export default function AfterSalesPage() {
   }
 
   function syncFromHandover() {
-    const props = loadProperties().filter(
-      (p) => p.status === "ส่งมอบให้ลูกค้า" || p.status === "หลังการขาย"
-    );
+    const props = loadProperties().filter((p) => isHandoverStatus(p.status));
     let count = 0;
+    let renamed = 0;
     props.forEach((p) => {
       const r = createAfterSalesPackage({
         propertyId: p.id,
         propertyCode: p.code,
-        customerName: "ลูกค้าผู้รับมอบ",
+        customerName: resolveCustomerName(p),
         handoverDate: new Date().toISOString(),
       });
       if (r.created) count++;
+      else if (r.renamed) renamed++;
     });
     refresh();
     showToast(
       count > 0
         ? `สร้าง Warranty + Follow-up สำหรับ ${count} หลัง`
-        : "ไม่มีบ้านใหม่ที่ต้องสร้าง (มีแพ็กเกจอยู่แล้ว)"
+        : renamed > 0
+          ? `อัปเดตชื่อลูกค้าในแพ็กเกจ ${renamed} หลัง`
+          : "ไม่มีบ้านใหม่ที่ต้องสร้าง (มีแพ็กเกจอยู่แล้ว)"
     );
   }
 

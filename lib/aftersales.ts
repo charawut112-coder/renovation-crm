@@ -153,6 +153,27 @@ export function saveFollowups(items: FollowupItem[]) {
   localStorage.setItem(F_KEY, JSON.stringify(items));
 }
 
+const LEGACY_HANDOVER_NAME = "ลูกค้าผู้รับมอบ";
+
+function replaceLegacyCustomerName<T extends { propertyId: string; customerName: string }>(
+  items: T[],
+  propertyId: string,
+  customerName: string
+): { items: T[]; changed: boolean } {
+  const nextName = customerName.trim();
+  if (!nextName || nextName === LEGACY_HANDOVER_NAME) {
+    return { items, changed: false };
+  }
+  let changed = false;
+  const next = items.map((item) => {
+    if (item.propertyId !== propertyId) return item;
+    if (item.customerName.trim() !== LEGACY_HANDOVER_NAME) return item;
+    changed = true;
+    return { ...item, customerName: nextName };
+  });
+  return { items: next, changed };
+}
+
 export function createAfterSalesPackage(params: {
   propertyId: string;
   propertyCode: string;
@@ -163,7 +184,11 @@ export function createAfterSalesPackage(params: {
   const warranties = loadWarranties();
   const followups = loadFollowups();
   if (warranties.some((w) => w.propertyId === params.propertyId)) {
-    return { created: false };
+    const nextWarranties = replaceLegacyCustomerName(warranties, params.propertyId, params.customerName);
+    const nextFollowups = replaceLegacyCustomerName(followups, params.propertyId, params.customerName);
+    if (nextWarranties.changed) saveWarranties(nextWarranties.items);
+    if (nextFollowups.changed) saveFollowups(nextFollowups.items);
+    return { created: false as const, renamed: nextWarranties.changed || nextFollowups.changed };
   }
   const newWarranties: Warranty[] = WARRANTY_POLICY.map((p, i) => ({
     id: `w-${params.propertyId}-${i}`,
@@ -189,7 +214,7 @@ export function createAfterSalesPackage(params: {
   }));
   saveWarranties([...newWarranties, ...warranties]);
   saveFollowups([...newFollowups, ...followups]);
-  return { created: true, warranties: newWarranties, followups: newFollowups };
+  return { created: true as const, renamed: false, warranties: newWarranties, followups: newFollowups };
 }
 
 export function warrantyExpiringSoon(w: Warranty, withinDays = 30): boolean {

@@ -4,16 +4,38 @@ import { useEffect, useState } from "react";
 import {
   PIPELINE_STATUSES,
   loadProperties,
+  saveProperties,
+  progressFromStatus,
   formatPrice,
   type Property,
+  type PropertyStatus,
 } from "@/lib/data";
+import StatusSelect from "@/components/StatusSelect";
 
 export default function DashboardPage() {
   const [properties, setProperties] = useState<Property[]>([]);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     setProperties(loadProperties());
   }, []);
+
+  function updateStatus(id: string, status: PropertyStatus) {
+    const current = properties.find((p) => p.id === id);
+    if (!current || current.status === status) return;
+    const next = properties.map((p) =>
+      p.id === id ? { ...p, status, progress: progressFromStatus(status) } : p
+    );
+    const created = saveProperties(next);
+    const pkg = created.find((item) => item.propertyId === id);
+    setProperties(next);
+    setToast(
+      pkg
+        ? `${current.code} → ${status} · สร้าง Warranty ให้ ${pkg.customerName}`
+        : `${current.code} → ${status}`
+    );
+    setTimeout(() => setToast(null), 2800);
+  }
 
   const byStatus = PIPELINE_STATUSES.map((s) => ({
     status: s,
@@ -28,7 +50,12 @@ export default function DashboardPage() {
   ).length;
 
   return (
-    <div className="p-8">
+    <div className="p-8 relative">
+      {toast && (
+        <div className="fixed top-4 right-6 z-20 bg-brand-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
+          อัปเดตแล้ว: {toast}
+        </div>
+      )}
       <h1 className="text-2xl font-bold text-slate-800 mb-1">Dashboard</h1>
       <p className="text-slate-500 mb-8">ภาพรวมธุรกิจรีโนเวทบ้านเพื่อขาย</p>
 
@@ -67,8 +94,42 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      <div className="bg-white rounded-xl border border-slate-200 mt-6 overflow-x-auto">
+        <div className="px-6 py-4 border-b border-slate-100">
+          <h2 className="font-semibold text-slate-800">อัปเดตสถานะ</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            เมื่อสถานะเป็นส่งมอบให้ลูกค้า หรือ หลังการขาย ระบบสร้าง Warranty และ Follow-up ให้ชื่อลูกค้าของบ้านนั้นครั้งเดียว
+          </p>
+        </div>
+        <table className="w-full text-sm min-w-[640px]">
+          <thead className="bg-slate-50 text-slate-600">
+            <tr>
+              <th className="text-left px-4 py-3 font-medium">รหัส</th>
+              <th className="text-left px-4 py-3 font-medium">ลูกค้า</th>
+              <th className="text-left px-4 py-3 font-medium">ที่อยู่</th>
+              <th className="text-left px-4 py-3 font-medium">สถานะ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {properties.map((p) => (
+              <tr key={p.id} className="border-t border-slate-100">
+                <td className="px-4 py-3 font-medium text-brand-600">{p.code}</td>
+                <td className="px-4 py-3">{p.customerName}</td>
+                <td className="px-4 py-3">
+                  <div>{p.address}</div>
+                  <div className="text-xs text-slate-400">{p.district}</div>
+                </td>
+                <td className="px-4 py-3">
+                  <StatusSelect value={p.status} onChange={(status) => updateStatus(p.id, status)} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       <p className="mt-6 text-sm text-slate-400">
-        MVP v0.1 — เปลี่ยนสถานะได้ที่ Pipeline / บ้านทั้งหมด · ข้อมูลเก็บในเบราว์เซอร์
+        MVP v0.1 — เปลี่ยนสถานะได้ที่ Dashboard, Pipeline, หรือบ้านทั้งหมด · ข้อมูลเก็บในเบราว์เซอร์
       </p>
     </div>
   );

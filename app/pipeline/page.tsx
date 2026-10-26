@@ -16,7 +16,6 @@ import {
   canAdvance,
   appendStatusLog,
 } from "@/lib/checklist";
-import { createAfterSalesPackage } from "@/lib/aftersales";
 import StatusSelect from "@/components/StatusSelect";
 
 type PropWithCheck = Property & { checklistDone?: string[] };
@@ -49,12 +48,13 @@ export default function PipelinePage() {
   }, []);
 
   function persist(next: PropWithCheck[]) {
-    saveProperties(next);
+    const created = saveProperties(next);
     const map: Record<string, string[]> = {};
     next.forEach((p) => {
       map[p.id] = p.checklistDone || [];
     });
     saveChecklistMap(map);
+    return created;
   }
 
   function toggleChecklist(propertyId: string, item: string) {
@@ -87,29 +87,25 @@ export default function PipelinePage() {
       }
     }
 
-    setProperties((prev) => {
-      const next = prev.map((p) => {
-        if (p.id !== id) return p;
-        appendStatusLog(p, p.status, status);
-        if (status === "ส่งมอบให้ลูกค้า" || status === "หลังการขาย") {
-          createAfterSalesPackage({
-            propertyId: p.id,
-            propertyCode: p.code,
-            customerName: "ลูกค้าผู้รับมอบ",
-          });
-        }
-        return {
-          ...p,
-          status,
-          progress: progressFromStatus(status),
-          checklistDone: [] as string[],
-        };
-      });
-      persist(next);
-      setToast(`${property.code}: ${property.status} → ${status}`);
-      setTimeout(() => setToast(null), 2800);
-      return next;
+    const next = properties.map((p) => {
+      if (p.id !== id) return p;
+      appendStatusLog(p, p.status, status);
+      return {
+        ...p,
+        status,
+        progress: progressFromStatus(status),
+        checklistDone: [] as string[],
+      };
     });
+    const created = persist(next);
+    const pkg = created.find((item) => item.propertyId === id);
+    setProperties(next);
+    setToast(
+      pkg
+        ? `${property.code}: ${property.status} → ${status} · สร้าง Warranty ให้ ${pkg.customerName}`
+        : `${property.code}: ${property.status} → ${status}`
+    );
+    setTimeout(() => setToast(null), 2800);
   }
 
   return (
@@ -156,6 +152,7 @@ export default function PipelinePage() {
                           </span>
                         </div>
                         <div className="text-xs text-slate-600 truncate">{p.address}</div>
+                        <div className="text-xs text-slate-500 truncate">{p.customerName}</div>
                         <div className="text-xs text-slate-400">{p.district}</div>
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-slate-500">{formatPrice(p.purchasePrice)}</span>
