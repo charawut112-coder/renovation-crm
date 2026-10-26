@@ -30,7 +30,10 @@ export default function Sidebar() {
       </div>
       <nav className="flex-1 p-3 space-y-1">
         {nav.map((item) => {
-          const active = pathname === item.href;
+          const active =
+            item.href === "/"
+              ? pathname === "/"
+              : pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
           return (
             <Link
@@ -50,7 +53,7 @@ export default function Sidebar() {
         })}
       </nav>
       <div className="p-4 text-xs text-brand-200 border-t border-brand-500">
-        MVP v0.2 · After-Sales
+        MVP v0.3 · Phase 1
       </div>
     </aside>
   );

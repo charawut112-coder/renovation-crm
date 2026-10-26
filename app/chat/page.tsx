@@ -1,5 +1,9 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { addCustomer, buildCustomerFromChat, matchPropertyCode, type Customer } from "@/lib/customers";
+import { linkCustomerIfUnassigned, loadProperties } from "@/lib/data";
 
 const QUESTIONS = [
   "ขอทราบชื่อหน่อยได้ไหมครับ",
@@ -21,45 +25,92 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);
+  const [saved, setSaved] = useState<Customer | null>(null);
+  const [savedCode, setSavedCode] = useState<string | undefined>();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const sending = useRef(false);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, saved]);
 
   function send() {
-    if (!input.trim() || step >= QUESTIONS.length) return;
+    if (sending.current || !input.trim() || step >= QUESTIONS.length) return;
+    sending.current = true;
     const userText = input.trim();
-    setMessages(m => [...m, { role: "user", text: userText }]);
-    setInput("");
     const newAnswers = [...answers, userText];
+    const nextStep = step + 1;
+    setMessages((m) => [...m, { role: "user", text: userText }]);
+    setInput("");
     setAnswers(newAnswers);
+    setStep(nextStep);
 
-    setTimeout(() => {
-      if (step < QUESTIONS.length - 1) {
-        let nextQ = QUESTIONS[step + 1].replace("{name}", newAnswers[0] || "");
-        setMessages(m => [...m, { role: "agent", text: nextQ }]);
-        setStep(step + 1);
-      } else {
-        const summary = `สรุปข้อมูลลูกค้าเรียบร้อยครับ ✅\n\nชื่อ: ${newAnswers[0] || "-"}\nงบประมาณ: ${newAnswers[1] || "-"}\nทำเล: ${newAnswers[2] || "-"}\nห้องนอน: ${newAnswers[3] || "-"}\nระยะเวลา: ${newAnswers[4] || "-"}\nวัตถุประสงค์: ${newAnswers[5] || "-"}\nดูบ้านอื่นอยู่: ${newAnswers[6] || "-"}\nช่องทางติดต่อ: ${newAnswers[7] || "-"}\n\nคะแนนลีดเบื้องต้น: Warm\nทีมงานจะติดต่อกลับเพื่อนัดชมบ้านครับ`;
-        setMessages(m => [...m, { role: "agent", text: summary }]);
-        setStep(step + 1);
+    window.setTimeout(() => {
+      if (nextStep < QUESTIONS.length) {
+        sending.current = false;
+        const nextQ = QUESTIONS[nextStep].replace("{name}", newAnswers[0] || "");
+        setMessages((m) => [...m, { role: "agent", text: nextQ }]);
+        return;
       }
+      const draft = buildCustomerFromChat(newAnswers);
+      const properties = loadProperties();
+      const code = matchPropertyCode(draft.preferredLocation || "", properties);
+      if (code) draft.interestedPropertyCode = code;
+      const customer = addCustomer(draft);
+      if (code) linkCustomerIfUnassigned(code, customer);
+      setSaved(customer);
+      setSavedCode(code);
+      const summary = [
+        "สรุปข้อมูลลูกค้าเรียบร้อยครับ ✅",
+        "",
+        `ชื่อ: ${customer.fullName}`,
+        `งบประมาณ: ${customer.budget || "-"}`,
+        `ทำเล: ${customer.preferredLocation || "-"}`,
+        `ห้องนอน: ${newAnswers[3] || "-"}`,
+        `ระยะเวลา: ${customer.timeline || "-"}`,
+        `วัตถุประสงค์: ${customer.purpose || "-"}`,
+        `ดูบ้านอื่นอยู่: ${newAnswers[6] || "-"}`,
+        `ช่องทางติดต่อ: ${newAnswers[7] || "-"}`,
+        "",
+        "คะแนนลีดเบื้องต้น: Warm",
+        code ? `สนใจบ้าน: ${code}` : "ยังจับคู่บ้านที่สนใจไม่ได้จากทำเลที่บอก",
+        "บันทึกเป็นลูกค้าในระบบแล้ว — ทีมงานจะติดต่อกลับเพื่อนัดชมบ้านครับ",
+      ].join("\n");
+      setMessages((m) => [...m, { role: "agent", text: summary }]);
     }, 500);
   }
+
+  const finished = step >= QUESTIONS.length;
 
   return (
     <div className="h-screen flex flex-col">
       <div className="px-6 py-4 border-b bg-white">
         <h1 className="text-xl font-bold">Lead Agent (จำลอง LINE OA)</h1>
-        <p className="text-sm text-slate-500">ทดลองคุยกับ Agent คัดกรองลีด — ถามทีละข้อ</p>
+        <p className="text-sm text-slate-500">ทดลองคุยกับ Agent คัดกรองลีด — ถามทีละข้อ แล้วบันทึกเป็นลูกค้า</p>
       </div>
       <div className="flex-1 overflow-y-auto p-6 space-y-3 bg-[#7494a8]">
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm whitespace-pre-line shadow-sm ${
-              m.role === "user" ? "bg-[#06C755] text-white rounded-br-md" : "bg-white text-slate-800 rounded-bl-md"
-            }`}>{m.text}</div>
+            <div
+              className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm whitespace-pre-line shadow-sm ${
+                m.role === "user" ? "bg-[#06C755] text-white rounded-br-md" : "bg-white text-slate-800 rounded-bl-md"
+              }`}
+            >
+              {m.text}
+            </div>
           </div>
         ))}
+        {saved && (
+          <div className="flex justify-start">
+            <Link
+              href={`/customers/${saved.id}`}
+              className="bg-white text-brand-600 text-sm font-medium px-4 py-2 rounded-2xl shadow-sm hover:underline"
+            >
+              เปิดแฟ้มลูกค้า {saved.fullName}
+              {savedCode ? ` · ${savedCode}` : ""}
+            </Link>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
       <div className="p-4 bg-white border-t flex gap-2">
@@ -67,12 +118,15 @@ export default function ChatPage() {
           className="flex-1 border rounded-full px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           placeholder="พิมพ์ข้อความ..."
           value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && send()}
-          disabled={step >= QUESTIONS.length}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && send()}
+          disabled={finished}
         />
-        <button onClick={send} disabled={step >= QUESTIONS.length}
-          className="bg-[#06C755] text-white rounded-full px-4 py-2 text-sm font-medium disabled:opacity-40">
+        <button
+          onClick={send}
+          disabled={finished}
+          className="bg-[#06C755] text-white rounded-full px-4 py-2 text-sm font-medium disabled:opacity-40"
+        >
           ส่ง
         </button>
       </div>

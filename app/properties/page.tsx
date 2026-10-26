@@ -1,47 +1,43 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  loadProperties,
-  saveProperties,
-  progressFromStatus,
-  formatPrice,
-  type Property,
-  type PropertyStatus,
-} from "@/lib/data";
-import StatusSelect from "@/components/StatusSelect";
+import Link from "next/link";
+import LateBadge from "@/components/LateBadge";
+import ProgressMeter from "@/components/ProgressMeter";
+import StatusChanger from "@/components/StatusChanger";
+import { formatPrice, resolveCustomerName } from "@/lib/data";
+import type { ChangeStatusResult } from "@/lib/pipeline";
+import { resetPropertyWorkspace } from "@/lib/reset";
+import { loadPropertyViews, type PropertyView } from "@/lib/views";
 
 export default function PropertiesPage() {
-  const [properties, setProperties] = useState<Property[]>([]);
+  const [rows, setRows] = useState<PropertyView[]>([]);
+  const [banner, setBanner] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  function refresh() {
+    setRows(loadPropertyViews());
+  }
+
   useEffect(() => {
-    setProperties(loadProperties());
+    refresh();
   }, []);
 
-  function updateStatus(id: string, status: PropertyStatus) {
-    const current = properties.find((p) => p.id === id);
-    if (!current || current.status === status) return;
-    const next = properties.map((p) =>
-      p.id === id ? { ...p, status, progress: progressFromStatus(status) } : p
-    );
-    const created = saveProperties(next);
-    const pkg = created.find((item) => item.propertyId === id);
-    setProperties(next);
-    setToast(
-      pkg
-        ? `${current.code} → ${status} · สร้าง Warranty ให้ ${pkg.customerName}`
-        : `${current.code} → ${status}`
-    );
-    setTimeout(() => setToast(null), 2500);
+  function onResult(result: ChangeStatusResult) {
+    if (!result.ok) {
+      setBanner(result.error);
+      return;
+    }
+    if (result.changed) setBanner(null);
   }
 
   function resetData() {
-    if (!confirm("รีเซ็ตข้อมูลกลับค่าเริ่มต้น?")) return;
-    localStorage.removeItem("renovation-crm-properties");
-    setProperties(loadProperties());
-    setToast("รีเซ็ตข้อมูลแล้ว");
-    setTimeout(() => setToast(null), 2000);
+    if (!confirm("รีเซ็ตบ้าน checklist timeline ไฟล์ และประวัติสถานะกลับค่าเริ่มต้น?")) return;
+    resetPropertyWorkspace();
+    refresh();
+    setBanner(null);
+    setToast("รีเซ็ตข้อมูลบ้านแล้ว");
+    window.setTimeout(() => setToast(null), 2000);
   }
 
   return (
@@ -50,7 +46,7 @@ export default function PropertiesPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">บ้านทั้งหมด</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            เปลี่ยนสถานะจากคอลัมน์สถานะ · บันทึกอัตโนมัติ
+            เปลี่ยนสถานะได้ทีละขั้นผ่านกฎเดียวกัน · checklist ไม่ครบจะขยับไม่ได้
           </p>
         </div>
         <button
@@ -61,6 +57,9 @@ export default function PropertiesPage() {
         </button>
       </div>
 
+      {banner && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-sm">{banner}</div>
+      )}
       {toast && (
         <div className="fixed top-4 right-6 z-20 bg-brand-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
           อัปเดตแล้ว: {toast}
@@ -68,7 +67,7 @@ export default function PropertiesPage() {
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-        <table className="w-full text-sm min-w-[760px]">
+        <table className="w-full text-sm min-w-[860px]">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="text-left px-4 py-3 font-medium">รหัส</th>
@@ -77,43 +76,51 @@ export default function PropertiesPage() {
               <th className="text-left px-4 py-3 font-medium">สถานะ</th>
               <th className="text-right px-4 py-3 font-medium">ต้นทุน</th>
               <th className="text-right px-4 py-3 font-medium">ราคาขาย</th>
-              <th className="text-center px-4 py-3 font-medium">Progress</th>
+              <th className="text-left px-4 py-3 font-medium">ตามแผน</th>
             </tr>
           </thead>
           <tbody>
-            {properties.map((p) => (
-              <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-3 font-medium text-brand-600">{p.code}</td>
-                <td className="px-4 py-3">
-                  <div>{p.address}</div>
-                  <div className="text-xs text-slate-400">{p.district}</div>
-                </td>
-                <td className="px-4 py-3">{p.customerName}</td>
-                <td className="px-4 py-3">
-                  <StatusSelect
-                    value={p.status}
-                    onChange={(s) => updateStatus(p.id, s)}
-                  />
-                </td>
-                <td className="px-4 py-3 text-right">
-                  {formatPrice(p.purchasePrice)}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  {p.salePrice ? formatPrice(p.salePrice) : "—"}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2 justify-center">
-                    <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-brand-500 rounded-full transition-all"
-                        style={{ width: `${p.progress}%` }}
-                      />
+            {rows.map((row) => {
+              const p = row.property;
+              const customer = resolveCustomerName(p, undefined, "");
+              return (
+                <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50">
+                  <td className="px-4 py-3">
+                    <Link href={`/properties/${p.id}`} className="font-medium text-brand-600 hover:underline">
+                      {p.code}
+                    </Link>
+                    <div className="mt-1">
+                      <LateBadge late={row.timing.late} />
                     </div>
-                    <span className="text-xs text-slate-500 w-8">{p.progress}%</span>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div>{p.address}</div>
+                    <div className="text-xs text-slate-400">{p.district}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {p.customerId ? (
+                      <Link href={`/customers/${p.customerId}`} className="text-brand-600 hover:underline">
+                        {customer || "ลูกค้า"}
+                      </Link>
+                    ) : (
+                      <span className="text-slate-400">ยังไม่ระบุ</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusChanger propertyId={p.id} status={p.status} onChanged={refresh} onResult={onResult} />
+                  </td>
+                  <td className="px-4 py-3 text-right">{formatPrice(p.purchasePrice)}</td>
+                  <td className="px-4 py-3 text-right">{p.salePrice ? formatPrice(p.salePrice) : "—"}</td>
+                  <td className="px-4 py-3">
+                    <ProgressMeter
+                      progress={row.timing.progress}
+                      late={row.timing.late}
+                      label={`${row.timing.doneCount}/${row.timing.total}`}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
