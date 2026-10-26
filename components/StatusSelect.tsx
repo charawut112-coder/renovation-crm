@@ -1,12 +1,15 @@
 "use client";
 
-import {
-  PIPELINE_STATUSES,
-  STATUS_COLORS,
-  allowedNextStatuses,
-  type PropertyStatus,
-} from "@/lib/data";
+import { PIPELINE_STATUSES, STATUS_COLORS, type PropertyStatus } from "@/lib/data";
 import clsx from "clsx";
+
+function allowedNextStatuses(current: PropertyStatus): PropertyStatus[] {
+  const i = PIPELINE_STATUSES.indexOf(current);
+  const allowed: PropertyStatus[] = [current];
+  if (i > 0) allowed.push(PIPELINE_STATUSES[i - 1]);
+  if (i >= 0 && i < PIPELINE_STATUSES.length - 1) allowed.push(PIPELINE_STATUSES[i + 1]);
+  return allowed;
+}
 
 type Props = {
   value: PropertyStatus;
