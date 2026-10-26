@@ -21,22 +21,20 @@ export default function DashboardPage() {
   }, []);
 
   function updateStatus(id: string, status: PropertyStatus) {
-    setProperties((prev) => {
-      const current = prev.find((p) => p.id === id);
-      if (!current || current.status === status) return prev;
-      const next = prev.map((p) =>
-        p.id === id ? { ...p, status, progress: progressFromStatus(status) } : p
-      );
-      const created = saveProperties(next);
-      const pkg = created.find((item) => item.propertyId === id);
-      setToast(
-        pkg
-          ? `${current.code} → ${status} · สร้าง Warranty ให้ ${pkg.customerName}`
-          : `${current.code} → ${status}`
-      );
-      setTimeout(() => setToast(null), 2800);
-      return next;
-    });
+    const current = properties.find((p) => p.id === id);
+    if (!current || current.status === status) return;
+    const next = properties.map((p) =>
+      p.id === id ? { ...p, status, progress: progressFromStatus(status) } : p
+    );
+    const created = saveProperties(next);
+    const pkg = created.find((item) => item.propertyId === id);
+    setProperties(next);
+    setToast(
+      pkg
+        ? `${current.code} → ${status} · สร้าง Warranty ให้ ${pkg.customerName}`
+        : `${current.code} → ${status}`
+    );
+    setTimeout(() => setToast(null), 2800);
   }
 
   const byStatus = PIPELINE_STATUSES.map((s) => ({

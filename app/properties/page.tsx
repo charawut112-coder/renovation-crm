@@ -20,23 +20,20 @@ export default function PropertiesPage() {
   }, []);
 
   function updateStatus(id: string, status: PropertyStatus) {
-    setProperties((prev) => {
-      const next = prev.map((p) =>
-        p.id === id
-          ? { ...p, status, progress: progressFromStatus(status) }
-          : p
-      );
-      const created = saveProperties(next);
-      const code = next.find((p) => p.id === id)?.code;
-      const pkg = created.find((item) => item.propertyId === id);
-      setToast(
-        pkg
-          ? `${code} → ${status} · สร้าง Warranty ให้ ${pkg.customerName}`
-          : `${code} → ${status}`
-      );
-      setTimeout(() => setToast(null), 2500);
-      return next;
-    });
+    const current = properties.find((p) => p.id === id);
+    if (!current || current.status === status) return;
+    const next = properties.map((p) =>
+      p.id === id ? { ...p, status, progress: progressFromStatus(status) } : p
+    );
+    const created = saveProperties(next);
+    const pkg = created.find((item) => item.propertyId === id);
+    setProperties(next);
+    setToast(
+      pkg
+        ? `${current.code} → ${status} · สร้าง Warranty ให้ ${pkg.customerName}`
+        : `${current.code} → ${status}`
+    );
+    setTimeout(() => setToast(null), 2500);
   }
 
   function resetData() {

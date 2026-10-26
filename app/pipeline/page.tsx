@@ -87,27 +87,25 @@ export default function PipelinePage() {
       }
     }
 
-    setProperties((prev) => {
-      const next = prev.map((p) => {
-        if (p.id !== id) return p;
-        appendStatusLog(p, p.status, status);
-        return {
-          ...p,
-          status,
-          progress: progressFromStatus(status),
-          checklistDone: [] as string[],
-        };
-      });
-      const created = persist(next);
-      const pkg = created.find((item) => item.propertyId === id);
-      setToast(
-        pkg
-          ? `${property.code}: ${property.status} → ${status} · สร้าง Warranty ให้ ${pkg.customerName}`
-          : `${property.code}: ${property.status} → ${status}`
-      );
-      setTimeout(() => setToast(null), 2800);
-      return next;
+    const next = properties.map((p) => {
+      if (p.id !== id) return p;
+      appendStatusLog(p, p.status, status);
+      return {
+        ...p,
+        status,
+        progress: progressFromStatus(status),
+        checklistDone: [] as string[],
+      };
     });
+    const created = persist(next);
+    const pkg = created.find((item) => item.propertyId === id);
+    setProperties(next);
+    setToast(
+      pkg
+        ? `${property.code}: ${property.status} → ${status} · สร้าง Warranty ให้ ${pkg.customerName}`
+        : `${property.code}: ${property.status} → ${status}`
+    );
+    setTimeout(() => setToast(null), 2800);
   }
 
   return (
