@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { STATUS_CHECKLIST, isChecklistItemSatisfied, loadChecklistDone, toggleChecklistItem } from "@/lib/checklist";
+import { STATUS_CHECKLIST, isChecklistItemSatisfied, loadChecklistDone, saveChecklistDone, toggleChecklistItem } from "@/lib/checklist";
 import type { PropertyStatus } from "@/lib/data";
+import { isQcComplete } from "@/lib/qc";
+import QcPanel from "@/components/QcPanel";
 import {
   addMedia,
   checklistItemRequiresMedia,
@@ -86,10 +88,23 @@ export default function ChecklistPanel({
   const [files, setFiles] = useState<MediaFile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyItem, setBusyItem] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   function reload() {
     setDone(loadChecklistDone(propertyId));
     setFiles(loadMedia().filter((f) => f.propertyId === propertyId));
+    setMounted(true);
+  }
+
+  function syncQcChecklist() {
+    const current = loadChecklistDone(propertyId);
+    const complete = isQcComplete(propertyId);
+    const has = current.includes("Checklist QC");
+    if (complete === has) return;
+    saveChecklistDone(
+      propertyId,
+      complete ? [...current, "Checklist QC"] : current.filter((entry) => entry !== "Checklist QC")
+    );
   }
 
   useEffect(() => {
@@ -142,10 +157,25 @@ export default function ChecklistPanel({
           const attached = files.filter(
             (f) => f.checklistItemKey === item || f.checklistItemId === item
           );
-          const satisfied = isChecklistItemSatisfied(propertyId, item, done, files);
+          const satisfied = mounted && isChecklistItemSatisfied(propertyId, item, done, files);
+          const autoRecord =
+            item === "บันทึกรับประกัน" || item === "Follow-up" || item === "Ticket ซ่อม";
           return (
             <li key={item} className={compact ? "" : "rounded-lg border border-slate-100 p-2"}>
-              {needsFile ? (
+              {item === "Checklist QC" ? (
+                <div className="space-y-1">
+                  <div className="text-xs font-medium text-slate-800">Checklist QC</div>
+                  <QcPanel
+                    propertyId={propertyId}
+                    compact={compact}
+                    reloadToken={reloadToken}
+                    onChange={() => {
+                      syncQcChecklist();
+                      notify();
+                    }}
+                  />
+                </div>
+              ) : needsFile ? (
                 <div className="space-y-1">
                   <div className="flex items-start justify-between gap-2">
                     <span className={`text-xs ${satisfied ? "text-slate-500 line-through" : "text-slate-800"}`}>
@@ -194,6 +224,11 @@ export default function ChecklistPanel({
                     </div>
                   ))}
                 </div>
+              ) : autoRecord && satisfied ? (
+                <div className="flex items-start justify-between gap-2 text-xs">
+                  <span className="text-slate-500 line-through">{item}</span>
+                  <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700">มีในระบบแล้ว</span>
+                </div>
               ) : (
                 <label className="flex items-center gap-2 text-xs cursor-pointer">
                   <input
@@ -205,7 +240,12 @@ export default function ChecklistPanel({
                     }}
                     className="rounded border-slate-300"
                   />
-                  <span className={satisfied ? "text-slate-500 line-through" : "text-slate-700"}>{item}</span>
+                  <span className={satisfied ? "text-slate-500 line-through" : "text-slate-700"}>
+                    {item}
+                    {!compact && autoRecord && (
+                      <span className="block text-[10px] text-slate-400">หรือติ๊กเมื่อตรวจแล้วว่าไม่มีรายการค้าง</span>
+                    )}
+                  </span>
                 </label>
               )}
             </li>

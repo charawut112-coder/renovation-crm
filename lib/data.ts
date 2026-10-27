@@ -184,12 +184,32 @@ export function saveProperties(properties: Property[]): HandoverPackageCreated[]
       propertyId: property.id,
       propertyCode: property.code,
       customerName,
+      customerId: property.customerId,
     });
     if (result.created) {
       created.push({ propertyId: property.id, propertyCode: property.code, customerName });
     }
   }
   return created;
+}
+
+/** ตั้งลูกค้าหลักของบ้าน (เจ้าของ / ผู้รับมอบ) */
+export function assignPropertyCustomer(
+  propertyId: string,
+  customer: { id: string; fullName: string }
+): boolean {
+  const properties = loadProperties();
+  const current = properties.find((property) => property.id === propertyId);
+  if (!current) return false;
+  if (current.customerId === customer.id && current.customerName === customer.fullName) return true;
+  saveProperties(
+    properties.map((property) =>
+      property.id === propertyId
+        ? { ...property, customerId: customer.id, customerName: customer.fullName }
+        : property
+    )
+  );
+  return true;
 }
 
 /** ผูกลูกค้าเข้ากับบ้าน ถ้าบ้านนั้นยังไม่มี customerId */

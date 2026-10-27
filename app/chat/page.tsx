@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { appendContact } from "@/lib/contacts";
 import { addCustomer, buildCustomerFromChat, matchPropertyCode, type Customer } from "@/lib/customers";
 import { linkCustomerIfUnassigned, loadProperties } from "@/lib/data";
 
@@ -58,6 +59,13 @@ export default function ChatPage() {
       if (code) draft.interestedPropertyCode = code;
       const customer = addCustomer(draft);
       if (code) linkCustomerIfUnassigned(code, customer);
+      appendContact({
+        customerId: customer.id,
+        channel: "LINE",
+        summary: `คัดกรองลีดผ่าน Lead Agent · งบ ${customer.budget || "-"} · ทำเล ${customer.preferredLocation || "-"}`,
+        propertyCode: code,
+        by: "Lead Agent",
+      });
       setSaved(customer);
       setSavedCode(code);
       const summary = [
