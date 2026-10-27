@@ -1,5 +1,7 @@
+import { propertyHasFollowup, propertyHasTicket, propertyHasWarranty } from "./aftersales";
 import type { Property, PropertyStatus } from "./data";
 import { PIPELINE_STATUSES, loadProperties } from "./data";
+import { isQcComplete } from "./qc";
 import {
   checklistItemRequiresMedia,
   loadMedia,
@@ -61,6 +63,10 @@ export function isChecklistItemSatisfied(
   done: string[],
   files?: MediaFile[]
 ): boolean {
+  if (item === "Checklist QC" && isQcComplete(propertyId)) return true;
+  if (item === "บันทึกรับประกัน" && propertyHasWarranty(propertyId)) return true;
+  if (item === "Follow-up" && propertyHasFollowup(propertyId)) return true;
+  if (item === "Ticket ซ่อม" && propertyHasTicket(propertyId)) return true;
   if (checklistItemRequiresMedia(item)) {
     const list = files ?? loadMedia();
     return mediaForChecklistItem(propertyId, item, list).length > 0;

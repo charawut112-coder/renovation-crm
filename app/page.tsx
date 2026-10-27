@@ -1,29 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import LateBadge from "@/components/LateBadge";
 import ProgressMeter from "@/components/ProgressMeter";
 import StatusChanger from "@/components/StatusChanger";
+import StatusDetail from "@/components/StatusDetail";
+import { canAdvance } from "@/lib/checklist";
 import { PIPELINE_STATUSES, formatPrice } from "@/lib/data";
 import type { ChangeStatusResult } from "@/lib/pipeline";
 import { loadPropertyViews, type PropertyView } from "@/lib/views";
 
 export default function DashboardPage() {
   const [rows, setRows] = useState<PropertyView[]>([]);
+  const [gaps, setGaps] = useState<Record<string, { ok: boolean; missing: string[] }>>({});
   const [banner, setBanner] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   function refresh() {
-    setRows(loadPropertyViews());
+    const next = loadPropertyViews();
+    const gate: Record<string, { ok: boolean; missing: string[] }> = {};
+    for (const row of next) {
+      const result = canAdvance({ ...row.property, checklistDone: row.checklistDone });
+      gate[row.property.id] = { ok: result.ok, missing: result.missing };
+    }
+    setRows(next);
+    setGaps(gate);
   }
 
   useEffect(() => {
     refresh();
   }, []);
 
-  function onResult(result: ChangeStatusResult) {
+  function onResult(result: ChangeStatusResult, propertyId: string, code: string) {
     if (!result.ok) {
-      setBanner(result.error);
+      setBanner(`${code}: ${result.error}`);
+      setExpandedId(propertyId);
       return;
     }
     if (result.changed) setBanner(null);
@@ -96,36 +108,56 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.property.id} className="border-t border-slate-100">
-                  <td className="px-4 py-3">
-                    <Link href={`/properties/${row.property.id}`} className="font-medium text-brand-600 hover:underline">
-                      {row.property.code}
-                    </Link>
-                    <div className="mt-1">
-                      <LateBadge late={row.timing.late} />
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div>{row.property.address}</div>
-                    <div className="text-xs text-slate-400">{row.property.district}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusChanger
-                      propertyId={row.property.id}
-                      status={row.property.status}
-                      onChanged={refresh}
-                      onResult={onResult}
-                    />
-                  </td>
-                  <td className="px-4 py-3">
-                    <ProgressMeter progress={row.timing.progress} late={row.timing.late} />
-                    <div className="text-[11px] text-slate-400 mt-1">
-                      จริง {row.timing.doneCount}/{row.timing.total} ขั้น · แผน {row.timing.expectedCount}/{row.timing.total}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {rows.map((row) => {
+                const advance = gaps[row.property.id] || { ok: false, missing: [] };
+                const open = expandedId === row.property.id;
+                return (
+                  <Fragment key={row.property.id}>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-4 py-3">
+                        <Link href={`/properties/${row.property.id}`} className="font-medium text-brand-600 hover:underline">
+                          {row.property.code}
+                        </Link>
+                        <div className="mt-1">
+                          <LateBadge late={row.timing.late} />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div>{row.property.address}</div>
+                        <div className="text-xs text-slate-400">{row.property.district}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusChanger
+                          propertyId={row.property.id}
+                          status={row.property.status}
+                          onChanged={refresh}
+                          onResult={(result) => onResult(result, row.property.id, row.property.code)}
+                        />
+                        <button
+                          type="button"
+                          className="mt-1 block text-[11px] text-brand-600 hover:underline"
+                          onClick={() => setExpandedId(open ? null : row.property.id)}
+                        >
+                          {open ? "ซ่อน checklist" : advance.ok ? "checklist ครบ" : `checklist ขาด ${advance.missing.length}`}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3">
+                        <ProgressMeter progress={row.timing.progress} late={row.timing.late} />
+                        <div className="text-[11px] text-slate-400 mt-1">
+                          จริง {row.timing.doneCount}/{row.timing.total} ขั้น · แผน {row.timing.expectedCount}/{row.timing.total}
+                        </div>
+                      </td>
+                    </tr>
+                    {open && (
+                      <tr className="bg-slate-50">
+                        <td colSpan={4} className="px-4 py-3">
+                          <StatusDetail propertyId={row.property.id} status={row.property.status} onChange={refresh} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

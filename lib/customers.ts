@@ -13,6 +13,7 @@ export interface Customer {
   preferredLocation?: string;
   purpose?: string;
   timeline?: string;
+  bedrooms?: string;
   interestedPropertyCode?: string;
   notes?: string;
   createdAt: string;
@@ -203,7 +204,6 @@ export function buildCustomerFromChat(
   const contactText = (contact || "").trim();
   const phone = /\d{2,}/.test(contactText) ? contactText : undefined;
   const noteLines = [
-    bedrooms?.trim() ? `ห้องนอน: ${bedrooms.trim()}` : "",
     other?.trim() ? `ดูบ้านอื่นอยู่: ${other.trim()}` : "",
     contactText ? `ช่องทางติดต่อกลับ: ${contactText}` : "",
     "บันทึกจาก Lead Agent (LINE)",
@@ -217,6 +217,7 @@ export function buildCustomerFromChat(
     preferredLocation: location?.trim() || undefined,
     purpose: purpose?.trim() || undefined,
     timeline: timeline?.trim() || undefined,
+    bedrooms: bedrooms?.trim() || undefined,
     notes: noteLines.join("\n"),
   };
 }

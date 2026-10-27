@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import LateBadge from "@/components/LateBadge";
 import ProgressMeter from "@/components/ProgressMeter";
 import StatusChanger from "@/components/StatusChanger";
+import StatusDetail from "@/components/StatusDetail";
+import { canAdvance } from "@/lib/checklist";
 import { formatPrice, resolveCustomerName } from "@/lib/data";
 import type { ChangeStatusResult } from "@/lib/pipeline";
 import { resetPropertyWorkspace } from "@/lib/reset";
@@ -12,20 +14,30 @@ import { loadPropertyViews, type PropertyView } from "@/lib/views";
 
 export default function PropertiesPage() {
   const [rows, setRows] = useState<PropertyView[]>([]);
+  const [gaps, setGaps] = useState<Record<string, { ok: boolean; missing: string[] }>>({});
   const [banner, setBanner] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   function refresh() {
-    setRows(loadPropertyViews());
+    const next = loadPropertyViews();
+    const gate: Record<string, { ok: boolean; missing: string[] }> = {};
+    for (const row of next) {
+      const result = canAdvance({ ...row.property, checklistDone: row.checklistDone });
+      gate[row.property.id] = { ok: result.ok, missing: result.missing };
+    }
+    setRows(next);
+    setGaps(gate);
   }
 
   useEffect(() => {
     refresh();
   }, []);
 
-  function onResult(result: ChangeStatusResult) {
+  function onResult(result: ChangeStatusResult, propertyId: string, code: string) {
     if (!result.ok) {
-      setBanner(result.error);
+      setBanner(`${code}: ${result.error}`);
+      setExpandedId(propertyId);
       return;
     }
     if (result.changed) setBanner(null);
@@ -83,8 +95,11 @@ export default function PropertiesPage() {
             {rows.map((row) => {
               const p = row.property;
               const customer = resolveCustomerName(p, undefined, "");
+              const advance = gaps[p.id] || { ok: false, missing: [] };
+              const open = expandedId === p.id;
               return (
-                <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50">
+                <Fragment key={p.id}>
+                <tr className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="px-4 py-3">
                     <Link href={`/properties/${p.id}`} className="font-medium text-brand-600 hover:underline">
                       {p.code}
@@ -107,7 +122,19 @@ export default function PropertiesPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <StatusChanger propertyId={p.id} status={p.status} onChanged={refresh} onResult={onResult} />
+                    <StatusChanger
+                      propertyId={p.id}
+                      status={p.status}
+                      onChanged={refresh}
+                      onResult={(result) => onResult(result, p.id, p.code)}
+                    />
+                    <button
+                      type="button"
+                      className="mt-1 block text-[11px] text-brand-600 hover:underline"
+                      onClick={() => setExpandedId(open ? null : p.id)}
+                    >
+                      {open ? "ซ่อน checklist" : advance.ok ? "checklist ครบ" : `checklist ขาด ${advance.missing.length}`}
+                    </button>
                   </td>
                   <td className="px-4 py-3 text-right">{formatPrice(p.purchasePrice)}</td>
                   <td className="px-4 py-3 text-right">{p.salePrice ? formatPrice(p.salePrice) : "—"}</td>
@@ -119,6 +146,14 @@ export default function PropertiesPage() {
                     />
                   </td>
                 </tr>
+                {open && (
+                  <tr className="bg-slate-50">
+                    <td colSpan={7} className="px-4 py-3">
+                      <StatusDetail propertyId={p.id} status={p.status} onChange={refresh} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>

@@ -53,7 +53,7 @@ export default function Sidebar() {
         })}
       </nav>
       <div className="p-4 text-xs text-brand-200 border-t border-brand-500">
-        MVP v0.3 · Phase 1
+        MVP v0.4 · Phase 2
       </div>
     </aside>
   );

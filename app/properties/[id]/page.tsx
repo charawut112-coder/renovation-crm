@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import ChecklistPanel from "@/components/ChecklistPanel";
+import QcPanel from "@/components/QcPanel";
 import LateBadge from "@/components/LateBadge";
 import StatusChanger from "@/components/StatusChanger";
 import { STATUS_COLORS, formatPrice, loadProperties, type Property } from "@/lib/data";
-import { loadLogs, type StatusLog } from "@/lib/checklist";
+import { STATUS_CHECKLIST, loadLogs, type StatusLog } from "@/lib/checklist";
 import { loadCustomers, type Customer } from "@/lib/customers";
 import { loadMedia, removeMedia, type MediaFile } from "@/lib/media";
 import type { ChangeStatusResult } from "@/lib/pipeline";
@@ -20,7 +21,8 @@ import {
   updateStageDate,
   type TimelineAnalysis,
 } from "@/lib/timeline";
-import { loadFollowups, loadTickets, loadWarranties, type AfterSalesTicket, type FollowupItem, type Warranty } from "@/lib/aftersales";
+import { TICKET_STATUS_LABEL, loadFollowups, loadTickets, loadWarranties, type AfterSalesTicket, type FollowupItem, type Warranty } from "@/lib/aftersales";
+import { referralsForCustomer } from "@/lib/referrals";
 
 export default function PropertyDetailPage() {
   const params = useParams<{ id: string }>();
@@ -34,6 +36,7 @@ export default function PropertyDetailPage() {
   const [warranties, setWarranties] = useState<Warranty[]>([]);
   const [tickets, setTickets] = useState<AfterSalesTicket[]>([]);
   const [followups, setFollowups] = useState<FollowupItem[]>([]);
+  const [referralCount, setReferralCount] = useState(0);
   const [banner, setBanner] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -52,6 +55,8 @@ export default function PropertyDetailPage() {
     setWarranties(loadWarranties().filter((w) => w.propertyId === id));
     setTickets(loadTickets().filter((t) => t.propertyId === id));
     setFollowups(loadFollowups().filter((f) => f.propertyId === id));
+    const ownerId = found?.customerId;
+    setReferralCount(ownerId ? referralsForCustomer(ownerId).length : 0);
     setReloadToken((n) => n + 1);
   }
 
@@ -238,6 +243,14 @@ export default function PropertyDetailPage() {
         />
       </section>
 
+      {!(STATUS_CHECKLIST[property.status] || []).includes("Checklist QC") && (
+        <section className="bg-white rounded-xl border border-slate-200 p-5">
+          <h2 className="font-semibold text-slate-800 mb-1">ผลตรวจ QC</h2>
+          <p className="text-xs text-slate-500 mb-3">ใช้ตอนสถานะตรวจงานก่อนนำขาย และยังเปิดดูย้อนหลังได้</p>
+          <QcPanel propertyId={property.id} reloadToken={reloadToken} onChange={refresh} />
+        </section>
+      )}
+
       <section className="bg-white rounded-xl border border-slate-200 p-5">
         <h2 className="font-semibold text-slate-800 mb-3">ไฟล์ของบ้านนี้</h2>
         {files.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีไฟล์ — แนบจาก checklist ด้านบน</p>}
@@ -275,17 +288,46 @@ export default function PropertyDetailPage() {
         </ul>
       </section>
 
-      {(warranties.length > 0 || tickets.length > 0 || followups.length > 0) && (
-        <section className="bg-white rounded-xl border border-slate-200 p-5 text-sm">
-          <h2 className="font-semibold text-slate-800 mb-2">หลังการขายของบ้านนี้</h2>
-          <p className="text-slate-600">
-            รับประกัน {warranties.length} รายการ · Ticket {tickets.length} · Follow-up {followups.length}
-          </p>
-          <Link href="/after-sales" className="text-brand-600 text-xs hover:underline">
-            เปิดหน้าระบบหลังการขาย
-          </Link>
-        </section>
-      )}
+      <section className="bg-white rounded-xl border border-slate-200 p-5 text-sm space-y-3">
+        <h2 className="font-semibold text-slate-800">หลังการขายของบ้านนี้</h2>
+        {warranties.length === 0 && tickets.length === 0 && followups.length === 0 && (
+          <p className="text-slate-400">ยังไม่มีแพ็กเกจ — จะถูกสร้างเมื่อสถานะเข้าสู่ส่งมอบหรือหลังการขาย</p>
+        )}
+        {warranties.length > 0 && (
+          <ul className="space-y-1 text-slate-600">
+            {warranties.map((item) => (
+              <li key={item.id}>
+                รับประกัน{item.category} ถึง {item.endDate} · {item.status}
+              </li>
+            ))}
+          </ul>
+        )}
+        {followups.length > 0 && (
+          <ul className="space-y-1 text-slate-600">
+            {followups.map((item) => (
+              <li key={item.id}>
+                {item.label} · {item.dueDate} {item.done ? "· ส่ง LINE แล้ว" : "· รอส่ง"}
+              </li>
+            ))}
+          </ul>
+        )}
+        {tickets.length > 0 && (
+          <ul className="space-y-1 text-slate-600">
+            {tickets.map((item) => (
+              <li key={item.id}>
+                {item.title} · {TICKET_STATUS_LABEL[item.status]}
+                {item.assignedTo ? ` · ${item.assignedTo}` : ""}
+              </li>
+            ))}
+          </ul>
+        )}
+        {referralCount > 0 && (
+          <p className="text-slate-600">การแนะนำของลูกค้านี้ {referralCount} รายการ</p>
+        )}
+        <Link href="/after-sales" className="text-brand-600 text-xs hover:underline">
+          เปิดหน้าระบบหลังการขาย
+        </Link>
+      </section>
 
       <section className="bg-white rounded-xl border border-slate-200 p-5">
         <h2 className="font-semibold text-slate-800 mb-3">ประวัติสถานะ</h2>
