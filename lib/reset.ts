@@ -1,6 +1,7 @@
 import { CHECK_KEY, LOG_KEY } from "./checklist";
 import { PROPERTIES_KEY } from "./data";
 import { MEDIA_KEY } from "./media";
+import { QC_KEY } from "./qc";
 import { TIMELINE_KEY } from "./timeline";
 
 /** ล้างข้อมูลบ้าน / checklist / timeline / ไฟล์ / log แล้วให้ seed ใหม่ตอนโหลดครั้งถัดไป */
@@ -11,4 +12,5 @@ export function resetPropertyWorkspace() {
   localStorage.removeItem(LOG_KEY);
   localStorage.removeItem(TIMELINE_KEY);
   localStorage.removeItem(MEDIA_KEY);
+  localStorage.removeItem(QC_KEY);
 }
