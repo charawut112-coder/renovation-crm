@@ -30,11 +30,12 @@ import LineFollowupModal from "@/components/LineFollowupModal";
 import NewTicketModal, { type NewTicketInput } from "@/components/NewTicketModal";
 import ReferralBoard from "@/components/ReferralBoard";
 import ScheduleList from "@/components/ScheduleList";
+import FieldServicePanel from "@/components/ops/FieldServicePanel";
 
-type Tab = "warranties" | "tickets" | "followups" | "schedule" | "referrals";
+type Tab = "field" | "warranties" | "tickets" | "followups" | "schedule" | "referrals";
 
 export default function AfterSalesPage() {
-  const [tab, setTab] = useState<Tab>("warranties");
+  const [tab, setTab] = useState<Tab>("field");
   const [warranties, setWarranties] = useState<Warranty[]>([]);
   const [tickets, setTickets] = useState<AfterSalesTicket[]>([]);
   const [followups, setFollowups] = useState<FollowupItem[]>([]);
@@ -180,6 +181,7 @@ export default function AfterSalesPage() {
     categoryFilter === "ทั้งหมด" ? warranties : warranties.filter((item) => item.category === categoryFilter);
 
   const tabs: { id: Tab; label: string; count?: number }[] = [
+    { id: "field", label: "แจ้งซ่อมหน้างาน" },
     { id: "warranties", label: "รับประกัน", count: warranties.length },
     { id: "tickets", label: "Ticket ซ่อม", count: openTickets.length },
     { id: "followups", label: "Follow-up", count: pendingFollowups.length },
@@ -188,12 +190,12 @@ export default function AfterSalesPage() {
   ];
 
   return (
-    <div className="p-8 relative max-w-6xl">
+    <div className="p-4 sm:p-8 relative max-w-6xl">
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">หลังการขาย</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            Warranty ตามหมวด · Follow-up ทาง LINE · Ticket · แนะนำเพื่อน
+            แจ้งซ่อมหน้างานจากชีต Aftersell นัดช่าง แนบหลักฐาน และปิดงานแบบยืนยัน — คง Warranty / Ticket / Follow-up ของเฟสก่อนไว้ด้วย
           </p>
         </div>
         <div className="flex gap-2">
@@ -219,12 +221,12 @@ export default function AfterSalesPage() {
         <MiniCard title="Follow-up ค้าง" value={String(pendingFollowups.length)} />
       </div>
 
-      <div className="flex gap-1 border-b border-slate-200 mb-4">
+      <div className="flex gap-1 border-b border-slate-200 mb-4 overflow-x-auto">
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition shrink-0 ${
               tab === t.id ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
@@ -235,6 +237,8 @@ export default function AfterSalesPage() {
           </button>
         ))}
       </div>
+
+      {tab === "field" && <FieldServicePanel />}
 
       {tab === "warranties" && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
