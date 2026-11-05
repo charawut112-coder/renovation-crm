@@ -15,6 +15,7 @@ export interface Warranty {
   propertyId: string;
   propertyCode: string;
   customerName: string;
+  customerId?: string;
   category: WarrantyCategory;
   startDate: string;
   endDate: string;
@@ -30,6 +31,7 @@ export interface AfterSalesTicket {
   propertyId: string;
   propertyCode: string;
   customerName: string;
+  customerId?: string;
   customerPhone: string;
   title: string;
   description: string;
@@ -51,11 +53,15 @@ export interface FollowupItem {
   propertyId: string;
   propertyCode: string;
   customerName: string;
+  customerId?: string;
   dayOffset: FollowupDay;
   dueDate: string;
   label: string;
   done: boolean;
   doneAt?: string;
+  /** ข้อความที่บันทึกเป็น LINE จำลอง */
+  lineMessage?: string;
+  sentVia?: "LINE";
 }
 
 export const WARRANTY_POLICY: {
@@ -174,10 +180,26 @@ function replaceLegacyCustomerName<T extends { propertyId: string; customerName:
   return { items: next, changed };
 }
 
+function stampCustomerId<T extends { propertyId: string; customerId?: string }>(
+  items: T[],
+  propertyId: string,
+  customerId?: string
+): { items: T[]; changed: boolean } {
+  if (!customerId) return { items, changed: false };
+  let changed = false;
+  const next = items.map((item) => {
+    if (item.propertyId !== propertyId || item.customerId) return item;
+    changed = true;
+    return { ...item, customerId };
+  });
+  return { items: next, changed };
+}
+
 export function createAfterSalesPackage(params: {
   propertyId: string;
   propertyCode: string;
   customerName: string;
+  customerId?: string;
   handoverDate?: string;
 }) {
   const start = (params.handoverDate || new Date().toISOString()).slice(0, 10);
@@ -186,15 +208,21 @@ export function createAfterSalesPackage(params: {
   if (warranties.some((w) => w.propertyId === params.propertyId)) {
     const nextWarranties = replaceLegacyCustomerName(warranties, params.propertyId, params.customerName);
     const nextFollowups = replaceLegacyCustomerName(followups, params.propertyId, params.customerName);
-    if (nextWarranties.changed) saveWarranties(nextWarranties.items);
-    if (nextFollowups.changed) saveFollowups(nextFollowups.items);
-    return { created: false as const, renamed: nextWarranties.changed || nextFollowups.changed };
+    const withIdW = stampCustomerId(nextWarranties.items, params.propertyId, params.customerId);
+    const withIdF = stampCustomerId(nextFollowups.items, params.propertyId, params.customerId);
+    if (nextWarranties.changed || withIdW.changed) saveWarranties(withIdW.items);
+    if (nextFollowups.changed || withIdF.changed) saveFollowups(withIdF.items);
+    return {
+      created: false as const,
+      renamed: nextWarranties.changed || nextFollowups.changed || withIdW.changed || withIdF.changed,
+    };
   }
   const newWarranties: Warranty[] = WARRANTY_POLICY.map((p, i) => ({
     id: `w-${params.propertyId}-${i}`,
     propertyId: params.propertyId,
     propertyCode: params.propertyCode,
     customerName: params.customerName,
+    customerId: params.customerId,
     category: p.category,
     startDate: start,
     endDate: addYears(start, p.years),
@@ -207,6 +235,7 @@ export function createAfterSalesPackage(params: {
     propertyId: params.propertyId,
     propertyCode: params.propertyCode,
     customerName: params.customerName,
+    customerId: params.customerId,
     dayOffset: d,
     dueDate: addDays(start, d),
     label: FOLLOWUP_LABELS[d],
@@ -215,6 +244,121 @@ export function createAfterSalesPackage(params: {
   saveWarranties([...newWarranties, ...warranties]);
   saveFollowups([...newFollowups, ...followups]);
   return { created: true as const, renamed: false, warranties: newWarranties, followups: newFollowups };
+}
+
+export function followupLineMessage(
+  item: Pick<FollowupItem, "customerName" | "propertyCode" | "dayOffset">,
+  address?: string
+): string {
+  const place = address ? `${item.propertyCode} (${address})` : item.propertyCode;
+  const name = item.customerName;
+  switch (item.dayOffset) {
+    case 7:
+      return `สวัสดีค่ะคุณ${name}\nบ้าน ${place} ส่งมอบไปได้ 7 วันแล้ว\nขออนุญาตสอบถามความพึงพอใจเบื้องต้นนะคะ มีจุดไหนที่อยากให้ทีมดูแลเพิ่มเติมไหมคะ`;
+    case 30:
+      return `สวัสดีค่ะคุณ${name}\nครบ 30 วันหลังส่งมอบบ้าน ${place}\nขอเช็คว่ามีปัญหาการใช้งานหรือจุดที่ต้องแก้ไขหรือไม่ค่ะ แจ้งได้เลยนะคะ`;
+    case 90:
+      return `สวัสดีค่ะคุณ${name}\nครบ 90 วันแล้วสำหรับบ้าน ${place}\nรบกวนขอรีวิวสั้น ๆ และถ้ามีเพื่อนที่กำลังมองบ้านรีโนเวท ช่วยแนะนำเราได้ค่ะ`;
+    case 365:
+      return `สวัสดีค่ะคุณ${name}\nรับประกันปีแรกของบ้าน ${place} ใกล้ครบกำหนด\nงานสี ไฟฟ้า ประปา และงานไม้ครบ 1 ปี — โครงสร้างยังคุ้มครองต่อถึง 5 ปี\nหากต้องการให้ทีมตรวจเช็คก่อนหมดประกันปีแรก ตอบกลับข้อความนี้ได้เลยค่ะ`;
+  }
+}
+
+export function completeFollowup(id: string, lineMessage: string): FollowupItem | null {
+  const message = lineMessage.trim();
+  if (!message) return null;
+  const items = loadFollowups();
+  const index = items.findIndex((item) => item.id === id);
+  if (index < 0) return null;
+  const updated: FollowupItem = {
+    ...items[index],
+    done: true,
+    doneAt: new Date().toISOString().slice(0, 10),
+    lineMessage: message,
+    sentVia: "LINE",
+  };
+  const next = items.slice();
+  next[index] = updated;
+  saveFollowups(next);
+  return updated;
+}
+
+export function claimWarranty(propertyId: string, category: WarrantyCategory): boolean {
+  let claimed = false;
+  const next = loadWarranties().map((item) => {
+    if (item.propertyId !== propertyId || item.category !== category || item.status !== "active") return item;
+    claimed = true;
+    return { ...item, status: "claimed" as const };
+  });
+  if (claimed) saveWarranties(next);
+  return claimed;
+}
+
+export function warrantyDatePassed(warranty: Warranty, now = new Date()): boolean {
+  return new Date(warranty.endDate).setHours(0, 0, 0, 0) < new Date(now).setHours(0, 0, 0, 0);
+}
+
+export function findActiveWarranty(propertyId: string, category: WarrantyCategory): Warranty | undefined {
+  return loadWarranties().find(
+    (item) =>
+      item.propertyId === propertyId &&
+      item.category === category &&
+      item.status === "active" &&
+      !warrantyDatePassed(item)
+  );
+}
+
+export function propertyHasWarranty(propertyId: string): boolean {
+  return loadWarranties().some((item) => item.propertyId === propertyId);
+}
+
+export function propertyHasFollowup(propertyId: string): boolean {
+  return loadFollowups().some((item) => item.propertyId === propertyId);
+}
+
+export function propertyHasTicket(propertyId: string): boolean {
+  return loadTickets().some((item) => item.propertyId === propertyId);
+}
+
+export type ScheduleKind = "followup" | "ticket";
+
+export interface ScheduleEntry {
+  id: string;
+  date: string;
+  kind: ScheduleKind;
+  title: string;
+  propertyCode: string;
+  customerName: string;
+  overdue: boolean;
+  done: boolean;
+}
+
+export function loadSchedule(): ScheduleEntry[] {
+  const followups: ScheduleEntry[] = loadFollowups().map((item) => ({
+    id: item.id,
+    date: item.dueDate,
+    kind: "followup",
+    title: item.label,
+    propertyCode: item.propertyCode,
+    customerName: item.customerName,
+    overdue: !item.done && isOverdue(item.dueDate),
+    done: item.done,
+  }));
+  const tickets: ScheduleEntry[] = loadTickets()
+    .filter((item) => item.scheduledDate)
+    .map((item) => ({
+      id: item.id,
+      date: item.scheduledDate as string,
+      kind: "ticket" as const,
+      title: `${item.title} · ${TICKET_STATUS_LABEL[item.status]}`,
+      propertyCode: item.propertyCode,
+      customerName: item.customerName,
+      overdue: !["done", "closed"].includes(item.status) && isOverdue(item.scheduledDate as string),
+      done: item.status === "done" || item.status === "closed",
+    }));
+  return [...followups, ...tickets].sort(
+    (a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title, "th")
+  );
 }
 
 export function warrantyExpiringSoon(w: Warranty, withinDays = 30): boolean {
@@ -236,6 +380,7 @@ function seedWarranties(): Warranty[] {
     propertyId: "6",
     propertyCode: "RN-2026-006",
     customerName: "วิภา สุขใจ",
+    customerId: "c2",
     category: p.category,
     startDate: start,
     endDate: addYears(start, p.years),
@@ -251,14 +396,17 @@ function seedTickets(): AfterSalesTicket[] {
       propertyId: "6",
       propertyCode: "RN-2026-006",
       customerName: "วิภา สุขใจ",
+      customerId: "c2",
       customerPhone: "089-876-5432",
       title: "น้ำหยดที่ใต้ซิงก์ครัว",
       description: "พบน้ำหยดเล็กน้อยบริเวณท่อใต้ซิงก์ หลังใช้งาน 2 สัปดาห์",
       priority: "medium",
-      status: "open",
+      status: "assigned",
       underWarranty: true,
       warrantyCategory: "ประปา",
-      createdAt: new Date().toISOString(),
+      assignedTo: "ช่างประปา",
+      scheduledDate: addDays(new Date().toISOString().slice(0, 10), 2),
+      createdAt: "2026-08-15T06:20:00.000Z",
     },
   ];
 }
@@ -271,11 +419,17 @@ function seedFollowups(): FollowupItem[] {
     propertyId: "6",
     propertyCode: "RN-2026-006",
     customerName: "วิภา สุขใจ",
+    customerId: "c2",
     dayOffset: d,
     dueDate: addDays(start, d),
     label: FOLLOWUP_LABELS[d],
     done: d === 7 || d === 30,
     doneAt: d === 7 || d === 30 ? addDays(start, d) : undefined,
+    sentVia: d === 7 || d === 30 ? ("LINE" as const) : undefined,
+    lineMessage:
+      d === 7 || d === 30
+        ? followupLineMessage({ customerName: "วิภา สุขใจ", propertyCode: "RN-2026-006", dayOffset: d })
+        : undefined,
   }));
 }
 
@@ -300,3 +454,11 @@ export const TICKET_STATUS_LABEL: Record<TicketStatus, string> = {
   done: "เสร็จแล้ว",
   closed: "ปิดงาน",
 };
+
+export const WARRANTY_STATUS_LABEL: Record<WarrantyStatus, string> = {
+  active: "คุ้มครอง",
+  expired: "หมดอายุ",
+  claimed: "เคลมแล้ว",
+};
+
+export const TICKET_ASSIGNEES = ["ช่างประปา", "ช่างไฟฟ้า", "ช่างสี", "ช่างไม้", "หัวหน้าช่าง"];

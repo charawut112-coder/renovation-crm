@@ -1,43 +1,55 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   loadWarranties,
   saveWarranties,
   loadTickets,
   saveTickets,
   loadFollowups,
-  saveFollowups,
   createAfterSalesPackage,
+  completeFollowup,
+  claimWarranty,
+  warrantyDatePassed,
   warrantyExpiringSoon,
   isOverdue,
   PRIORITY_LABEL,
   PRIORITY_COLOR,
   TICKET_STATUS_LABEL,
   WARRANTY_POLICY,
+  WARRANTY_STATUS_LABEL,
   type Warranty,
   type AfterSalesTicket,
   type FollowupItem,
-  type TicketPriority,
   type TicketStatus,
 } from "@/lib/aftersales";
+import { appendContact } from "@/lib/contacts";
 import { isHandoverStatus, loadProperties, resolveCustomerName } from "@/lib/data";
-import NewTicketModal from "@/components/NewTicketModal";
+import LineFollowupModal from "@/components/LineFollowupModal";
+import NewTicketModal, { type NewTicketInput } from "@/components/NewTicketModal";
+import ReferralBoard from "@/components/ReferralBoard";
+import ScheduleList from "@/components/ScheduleList";
+import FieldServicePanel from "@/components/ops/FieldServicePanel";
 
-type Tab = "warranties" | "tickets" | "followups";
+type Tab = "field" | "warranties" | "tickets" | "followups" | "schedule" | "referrals";
 
 export default function AfterSalesPage() {
-  const [tab, setTab] = useState<Tab>("warranties");
+  const [tab, setTab] = useState<Tab>("field");
   const [warranties, setWarranties] = useState<Warranty[]>([]);
   const [tickets, setTickets] = useState<AfterSalesTicket[]>([]);
   const [followups, setFollowups] = useState<FollowupItem[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [showNewTicket, setShowNewTicket] = useState(false);
+  const [lineTarget, setLineTarget] = useState<FollowupItem | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string>("ทั้งหมด");
+  const [reloadToken, setReloadToken] = useState(0);
 
   function refresh() {
     setWarranties(loadWarranties());
     setTickets(loadTickets());
     setFollowups(loadFollowups());
+    setReloadToken((value) => value + 1);
   }
 
   useEffect(() => {
@@ -49,13 +61,21 @@ export default function AfterSalesPage() {
     setTimeout(() => setToast(null), 2800);
   }
 
-  function markFollowupDone(id: string) {
-    const next = followups.map((f) =>
-      f.id === id ? { ...f, done: true, doneAt: new Date().toISOString().slice(0, 10) } : f
-    );
-    setFollowups(next);
-    saveFollowups(next);
-    showToast("บันทึก Follow-up แล้ว");
+  function sendFollowup(message: string) {
+    if (!lineTarget) return;
+    const saved = completeFollowup(lineTarget.id, message);
+    if (!saved) return;
+    if (saved.customerId) {
+      appendContact({
+        customerId: saved.customerId,
+        channel: "LINE",
+        summary: `Follow-up +${saved.dayOffset} วัน: ${saved.label}`,
+        propertyCode: saved.propertyCode,
+      });
+    }
+    setLineTarget(null);
+    refresh();
+    showToast("บันทึกข้อความ LINE แล้ว");
   }
 
   function updateTicketStatus(id: string, status: TicketStatus) {
@@ -82,35 +102,50 @@ export default function AfterSalesPage() {
     showToast(`บันทึก NPS = ${score}`);
   }
 
-  function createTicket(form: {
-    propertyCode: string;
-    customerName: string;
-    customerPhone: string;
-    title: string;
-    description: string;
-    priority: TicketPriority;
-    underWarranty: boolean;
-  }) {
-    const props = loadProperties();
-    const prop = props.find((p) => p.code === form.propertyCode);
+  function createTicket(form: NewTicketInput) {
     const ticket: AfterSalesTicket = {
       id: `t-${Date.now()}`,
-      propertyId: prop?.id || "unknown",
+      propertyId: form.propertyId,
       propertyCode: form.propertyCode,
       customerName: form.customerName,
+      customerId: form.customerId,
       customerPhone: form.customerPhone,
       title: form.title,
       description: form.description,
       priority: form.priority,
-      status: "open",
+      status: form.assignedTo ? "assigned" : "open",
       underWarranty: form.underWarranty,
+      warrantyCategory: form.warrantyCategory,
+      assignedTo: form.assignedTo,
+      scheduledDate: form.scheduledDate,
       createdAt: new Date().toISOString(),
     };
     const next = [ticket, ...tickets];
     setTickets(next);
     saveTickets(next);
+    if (form.underWarranty && form.warrantyCategory && form.warrantyCategory !== "อื่นๆ") {
+      claimWarranty(form.propertyId, form.warrantyCategory);
+    }
+    if (form.customerId) {
+      appendContact({
+        customerId: form.customerId,
+        channel: "โน้ต",
+        summary: `เปิด Ticket: ${form.title}`,
+        propertyCode: form.propertyCode,
+      });
+    }
     setShowNewTicket(false);
+    refresh();
     showToast("สร้าง Ticket แล้ว");
+  }
+
+  function markClaimed(id: string) {
+    const target = warranties.find((item) => item.id === id);
+    if (!target) return;
+    const next = warranties.map((item) => (item.id === id ? { ...item, status: "claimed" as const } : item));
+    setWarranties(next);
+    saveWarranties(next);
+    showToast(`บันทึกเคลม ${target.category}`);
   }
 
   function syncFromHandover() {
@@ -122,6 +157,7 @@ export default function AfterSalesPage() {
         propertyId: p.id,
         propertyCode: p.code,
         customerName: resolveCustomerName(p),
+        customerId: p.customerId,
         handoverDate: new Date().toISOString(),
       });
       if (r.created) count++;
@@ -141,19 +177,25 @@ export default function AfterSalesPage() {
   const openTickets = tickets.filter((t) => !["done", "closed"].includes(t.status));
   const pendingFollowups = followups.filter((f) => !f.done);
 
+  const visibleWarranties =
+    categoryFilter === "ทั้งหมด" ? warranties : warranties.filter((item) => item.category === categoryFilter);
+
   const tabs: { id: Tab; label: string; count?: number }[] = [
+    { id: "field", label: "แจ้งซ่อมหน้างาน" },
     { id: "warranties", label: "รับประกัน", count: warranties.length },
     { id: "tickets", label: "Ticket ซ่อม", count: openTickets.length },
     { id: "followups", label: "Follow-up", count: pendingFollowups.length },
+    { id: "schedule", label: "ตารางนัด" },
+    { id: "referrals", label: "แนะนำเพื่อน" },
   ];
 
   return (
-    <div className="p-8 relative max-w-6xl">
+    <div className="p-4 sm:p-8 relative max-w-6xl">
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">หลังการขาย</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            ตามสเปก §6: Warranty · Auto Follow-up · Maintenance Ticket
+            แจ้งซ่อมหน้างานจากชีต Aftersell นัดช่าง แนบหลักฐาน และปิดงานแบบยืนยัน — คง Warranty / Ticket / Follow-up ของเฟสก่อนไว้ด้วย
           </p>
         </div>
         <div className="flex gap-2">
@@ -179,12 +221,12 @@ export default function AfterSalesPage() {
         <MiniCard title="Follow-up ค้าง" value={String(pendingFollowups.length)} />
       </div>
 
-      <div className="flex gap-1 border-b border-slate-200 mb-4">
+      <div className="flex gap-1 border-b border-slate-200 mb-4 overflow-x-auto">
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition shrink-0 ${
               tab === t.id ? "border-brand-600 text-brand-600" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
@@ -196,9 +238,25 @@ export default function AfterSalesPage() {
         ))}
       </div>
 
+      {tab === "field" && <FieldServicePanel />}
+
       {tab === "warranties" && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-          <table className="w-full text-sm min-w-[700px]">
+          <div className="px-4 py-3 flex flex-wrap gap-2 border-b border-slate-100">
+            {["ทั้งหมด", ...WARRANTY_POLICY.map((item) => item.category)].map((category) => (
+              <button
+                key={category}
+                type="button"
+                onClick={() => setCategoryFilter(category)}
+                className={`text-xs px-2 py-1 rounded-full border ${
+                  categoryFilter === category ? "bg-brand-600 text-white border-brand-600" : "border-slate-200 text-slate-600"
+                }`}
+              >
+                {category}
+              </button>
+            ))}
+          </div>
+          <table className="w-full text-sm min-w-[760px]">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="text-left px-4 py-3">บ้าน</th>
@@ -210,15 +268,31 @@ export default function AfterSalesPage() {
               </tr>
             </thead>
             <tbody>
-              {warranties.map((w) => {
+              {visibleWarranties.map((w) => {
                 const soon = warrantyExpiringSoon(w);
-                const expired = w.status === "active" && new Date(w.endDate) < new Date();
+                const expired = w.status === "active" && warrantyDatePassed(w);
+                const label = expired ? "หมดอายุ" : WARRANTY_STATUS_LABEL[w.status];
+                const tone =
+                  expired || w.status === "expired"
+                    ? "bg-slate-100 text-slate-600"
+                    : w.status === "claimed"
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-green-100 text-green-700";
+                const years = WARRANTY_POLICY.find((item) => item.category === w.category)?.years;
                 return (
                   <tr key={w.id} className="border-t border-slate-100">
                     <td className="px-4 py-3 font-medium text-brand-600">{w.propertyCode}</td>
-                    <td className="px-4 py-3">{w.customerName}</td>
                     <td className="px-4 py-3">
-                      <div>{w.category}</div>
+                      {w.customerId ? (
+                        <Link href={`/customers/${w.customerId}`} className="text-brand-600 hover:underline">
+                          {w.customerName}
+                        </Link>
+                      ) : (
+                        w.customerName
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>{w.category}{years ? ` · ${years} ปี` : ""}</div>
                       <div className="text-xs text-slate-400">{w.description}</div>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{w.startDate}</td>
@@ -229,14 +303,17 @@ export default function AfterSalesPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-700">
-                        {expired ? "หมดอายุ" : w.status === "active" ? "คุ้มครอง" : w.status}
-                      </span>
+                      <span className={`text-xs px-2 py-0.5 rounded ${tone}`}>{label}</span>
+                      {w.status === "active" && !expired && (
+                        <button type="button" className="ml-2 text-[11px] text-brand-600 hover:underline" onClick={() => markClaimed(w.id)}>
+                          บันทึกเคลม
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
               })}
-              {warranties.length === 0 && (
+              {visibleWarranties.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
                     ยังไม่มีรายการรับประกัน — กด「สร้าง Warranty จากบ้านที่ส่งมอบ」
@@ -268,6 +345,9 @@ export default function AfterSalesPage() {
                   </div>
                   <div className="text-xs text-slate-500 mt-1">
                     {t.propertyCode} · {t.customerName} · {t.customerPhone}
+                    {t.warrantyCategory ? ` · หมวด ${t.warrantyCategory}` : ""}
+                    {t.assignedTo ? ` · ${t.assignedTo}` : ""}
+                    {t.scheduledDate ? ` · นัด ${t.scheduledDate}` : ""}
                   </div>
                   <p className="text-sm text-slate-600 mt-2">{t.description}</p>
                 </div>
@@ -319,16 +399,29 @@ export default function AfterSalesPage() {
                       )}
                     </div>
                   </div>
-                  {f.done ? (
-                    <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">เสร็จแล้ว {f.doneAt}</span>
-                  ) : (
-                    <button
-                      onClick={() => markFollowupDone(f.id)}
-                      className="text-xs bg-brand-600 text-white px-3 py-1.5 rounded-lg hover:bg-brand-700"
-                    >
-                      ทำแล้ว (ส่ง LINE จำลอง)
-                    </button>
-                  )}
+                  <div className="flex flex-col items-end gap-1">
+                    {f.done ? (
+                      <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                        ส่ง LINE แล้ว {f.doneAt}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setLineTarget(f)}
+                        className="text-xs bg-[#06C755] text-white px-3 py-1.5 rounded-lg"
+                      >
+                        ส่ง LINE
+                      </button>
+                    )}
+                    {f.lineMessage && (
+                      <p className="text-[11px] text-slate-500 max-w-xs text-right whitespace-pre-line">{f.lineMessage}</p>
+                    )}
+                    {f.done && !f.lineMessage && (
+                      <button type="button" className="text-[11px] text-brand-600 hover:underline" onClick={() => setLineTarget(f)}>
+                        บันทึกข้อความที่ส่ง
+                      </button>
+                    )}
+                  </div>
                 </li>
               ))}
           </ul>
@@ -338,8 +431,15 @@ export default function AfterSalesPage() {
         </div>
       )}
 
+      {tab === "schedule" && <ScheduleList reloadToken={reloadToken} />}
+
+      {tab === "referrals" && <ReferralBoard reloadToken={reloadToken} onChange={refresh} />}
+
       {showNewTicket && (
         <NewTicketModal onClose={() => setShowNewTicket(false)} onSubmit={createTicket} />
+      )}
+      {lineTarget && (
+        <LineFollowupModal item={lineTarget} onClose={() => setLineTarget(null)} onSubmit={sendFollowup} />
       )}
     </div>
   );
