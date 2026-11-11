@@ -1,5 +1,6 @@
 import { formatIsoDate, formatMoney, formatQty } from "./format";
 import { describeStockGap, type HouseView, type OpsView } from "./ops";
+import { UNIT_LABEL } from "./units";
 
 export type AgentReply = {
   text: string;
@@ -9,6 +10,7 @@ export type AgentReply = {
 function houseBrief(house: HouseView): string {
   const lines = [
     `${house.label}`,
+    `หน่วยงาน: ${house.unitLabel}${house.handoff.next ? ` · ส่งต่อไปได้เมื่อผ่านเงื่อนไข ${house.handoff.blockers.length ? `(ติด ${house.handoff.blockers.length} ข้อ)` : "(พร้อมส่งต่อ)"}` : " · ปลายทางของงานนี้"}`,
     `สถานะบ้าน: ${house.houseStatus}${house.signStatus ? ` · ป้าย ${house.signStatus}` : ""}`,
     `ขั้นงาน: ${house.step} · ผู้รับผิดชอบ ${house.stepOwner || "ยังไม่ระบุ"} · กำหนดส่ง ${house.stepDue ? formatIsoDate(house.stepDue) : "ยังไม่ระบุ"}`,
     `ช่างหลัก: ${house.craftsman || "ยังไม่ระบุ"}`,
@@ -62,6 +64,7 @@ function summary(view: OpsView): string {
   return [
     `สรุปงานค้างจากข้อมูลในระบบ (snapshot ${view.generatedAt})`,
     `บ้านในชีตสถานะบ้าน ${view.kpis.housesOnSheet} หลัง — ${statusLine || "ไม่มีแถว"}`,
+    `แยกตามหน่วยงาน: ${view.kpis.byUnit.map((unit) => `${unit.label} ${unit.count} (${unit.bottleneck})`).join(" · ")}`,
     `After-Sales ยังไม่ปิด ${view.kpis.openAfterSales} เรื่อง · งานล่าช้า ${view.kpis.lateCount} รายการ · สต็อกถึงจุดสั่งซื้อ ${view.kpis.lowStock} รายการ`,
     view.overlaps.length
       ? `คิวช่างซ้อน ${view.overlaps.length} ช่วง เช่น ${view.overlaps[0].craftsman} เวลา ${view.overlaps[0].when} (${view.overlaps[0].items.length} งาน)`
@@ -159,6 +162,21 @@ export function answerAgent(question: string, view: OpsView): AgentReply {
     };
   }
 
+  if (/หน่วย|ส่งต่อ|ออกแบบ|ก่อสร้าง|ขาย|หลังการขาย/.test(text) && !/ประวัติบ้าน/.test(text)) {
+    const ready = view.houses.filter((house) => house.handoff.next && house.handoff.blockers.length === 0);
+    const lines = view.kpis.byUnit.map((unit) => `- ${unit.label}: ${unit.count} · ${unit.bottleneck}`);
+    const readyLine = ready.length
+      ? ready
+          .slice(0, 6)
+          .map((house) => `- ${house.label} พร้อมส่งต่อไป${UNIT_LABEL[house.handoff.next!]}`)
+          .join("\n")
+      : "- ยังไม่มีบ้านที่ผ่านเงื่อนไขส่งต่อ";
+    for (const unit of view.kpis.byUnit) links.push({ href: unit.href, label: unit.label });
+    return {
+      text: ["ภาพรวมห้าหน่วยงาน จากบ้านหลังเดียวกัน\n", ...lines, "\nบ้านที่ส่งต่อได้ตอนนี้", readyLine].join("\n"),
+      links,
+    };
+  }
   if (/แผน/.test(text)) {
     links.push({ href: "/work", label: "เปิดสถานะงาน" }, { href: "/craftsmen", label: "เปิดคิวช่าง" });
     return { text: plan(view), links };

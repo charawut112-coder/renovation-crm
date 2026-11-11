@@ -8,7 +8,7 @@ import { answerAgent } from "@/lib/agent";
 
 type Msg = { role: "user" | "agent"; text: string; links?: { href: string; label: string }[] };
 
-const PROMPTS = ["สรุปงานค้าง", "เสนอแผนงาน", "สต็อกใกล้หมด", "คิวช่างคนไหนแน่น", "ประวัติบ้าน 97/269"];
+const PROMPTS = ["สรุปงานค้าง", "แยกตามหน่วยงาน", "บ้านไหนส่งต่อได้", "สต็อกใกล้หมด", "คิวช่างคนไหนแน่น", "ประวัติบ้าน 97/269"];
 
 export default function AgentPage() {
   const { view } = useOps();
@@ -43,7 +43,7 @@ export default function AgentPage() {
     <div className="p-4 sm:p-8 max-w-3xl flex flex-col min-h-[calc(100vh-1rem)]">
       <PageHead
         title="AI Agent"
-        subtitle="ตอบจากข้อมูลบ้าน สต็อก แบบ และ After-Sales ในแอป ไม่ได้ต่อโมเดลภายนอกในรอบนี้ จึงสรุปตามกฎจาก snapshot และรายการที่บันทึกไว้"
+        subtitle="ตอบจากบ้านหลังเดียวกันทั้งห้าหน่วยงาน ไม่ได้ต่อโมเดลภายนอก จึงสรุปตามกฎจาก snapshot และรายการที่บันทึกไว้"
       />
       <div className="flex-1 bg-white border border-slate-200 rounded-xl p-4 space-y-3 overflow-y-auto mb-3 min-h-[420px]">
         {messages.map((message, index) => (

@@ -14,6 +14,7 @@ import {
   type StockMoveType,
   type UserMovement,
 } from "./ops";
+import { UNIT_LABEL, type SalesLead } from "./units";
 
 export function readOpsState(): OpsState {
   if (typeof window === "undefined") return emptyOpsState();
@@ -21,7 +22,11 @@ export function readOpsState(): OpsState {
     const raw = localStorage.getItem(OPS_STORAGE_KEY);
     if (!raw) return emptyOpsState();
     const parsed = JSON.parse(raw) as Partial<OpsState>;
-    return { ...emptyOpsState(), ...parsed };
+    const units = parsed.units || {};
+    for (const entry of Object.values(units)) {
+      if (entry && !Array.isArray(entry.history)) entry.history = [];
+    }
+    return { ...emptyOpsState(), ...parsed, units };
   } catch {
     return emptyOpsState();
   }
@@ -86,6 +91,17 @@ export function setDesignPhase(id: string, phase: DesignPhase, note: string) {
     current.phase = phase;
     current.history = [...(current.history || []), { at: new Date().toISOString(), phase, note, by: "ทีมงาน" }];
     state.design[id] = current;
+    // อนุมัติแบบยังไม่ย้ายหน่วยเอง ต้องกดส่งต่อ ไม่งั้นบ้านจะหายจากบอร์ดออกแบบทันที
+    if (phase === "อนุมัติ" || phase === "ไม่ออกแบบ") {
+      const view = assemble(state);
+      const houseId = view.designJobs.find((job) => job.id === id)?.houseId;
+      if (!houseId) return;
+      const assignment = state.units[houseId] || { history: [] };
+      if (!assignment.unit || assignment.unit === "design") {
+        assignment.unit = "design";
+        state.units[houseId] = assignment;
+      }
+    }
   });
 }
 
@@ -103,6 +119,75 @@ export function addDesignAttachment(id: string, file: Attachment) {
     const current = state.design[id] || { history: [], attachments: [] };
     current.attachments = [...(current.attachments || []), file];
     state.design[id] = current;
+  });
+}
+
+export function handoffHouse(houseId: string, note: string): { ok: true; toLabel: string } | { ok: false; error: string } {
+  const view = assemble(readOpsState());
+  const house = view.houses.find((item) => item.id === houseId);
+  if (!house) return { ok: false, error: "ไม่พบบ้านนี้" };
+  if (!house.handoff.next) return { ok: false, error: house.handoff.blockers[0] || "ไม่มีหน่วยถัดไป" };
+  if (house.handoff.blockers.length) return { ok: false, error: house.handoff.blockers.join(" · ") };
+  const to = house.handoff.next;
+  const from = house.flowUnit;
+  update((state) => {
+    const current = state.units[houseId] || { history: [] };
+    current.unit = to;
+    current.history = [
+      ...(current.history || []),
+      {
+        at: new Date().toISOString(),
+        from,
+        to,
+        note: note.trim() || "ส่งต่อไปหน่วยถัดไป",
+        by: "ทีมงาน",
+      },
+    ];
+    if (to === "sales" && !current.salesLead) current.salesLead = "ลีด";
+    if (to === "aftersales") current.handoverConfirmed = true;
+    state.units[houseId] = current;
+    if (house.handoff.stepTo) {
+      const steps = state.steps[houseId] || { dues: {}, owners: {}, history: [] };
+      if (house.step !== house.handoff.stepTo) {
+        steps.step = house.handoff.stepTo;
+        steps.history = [
+          ...(steps.history || []),
+          {
+            at: new Date().toISOString(),
+            from: house.step,
+            to: house.handoff.stepTo,
+            note: `ส่งต่อจาก${UNIT_LABEL[from]}ไป${UNIT_LABEL[to]}`,
+          },
+        ];
+      }
+      state.steps[houseId] = steps;
+    }
+  });
+  return { ok: true, toLabel: UNIT_LABEL[to] };
+}
+
+export function setSalesLead(houseId: string, salesLead: SalesLead) {
+  update((state) => {
+    const current = state.units[houseId] || { history: [] };
+    current.salesLead = salesLead;
+    if (!current.unit) current.unit = "sales";
+    state.units[houseId] = current;
+  });
+}
+
+export function setSalesCustomer(houseId: string, salesCustomer: string) {
+  update((state) => {
+    const current = state.units[houseId] || { history: [] };
+    current.salesCustomer = salesCustomer;
+    state.units[houseId] = current;
+  });
+}
+
+export function confirmHouseHandover(houseId: string, confirmed: boolean) {
+  update((state) => {
+    const current = state.units[houseId] || { history: [] };
+    current.handoverConfirmed = confirmed;
+    state.units[houseId] = current;
   });
 }
 

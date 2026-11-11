@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useOps } from "@/components/ops/useOps";
 import { Btn, Empty, PageHead, Pill, Select, TextInput } from "@/components/ops/ui";
+import { UnitBanner } from "@/components/units/chrome";
 import { addProgress, addSchedule } from "@/lib/opsStore";
 import { formatIsoDate } from "@/lib/format";
 
@@ -16,6 +17,7 @@ export default function CraftsmenPage() {
   const [note, setNote] = useState("");
   const [allowOverlap, setAllowOverlap] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unitOnly, setUnitOnly] = useState(true);
   const [photoUrl, setPhotoUrl] = useState("");
   const [progressNote, setProgressNote] = useState("");
 
@@ -23,16 +25,20 @@ export default function CraftsmenPage() {
 
   const bundle = useMemo(() => {
     if (!view) return null;
-    const houses = view.houses.filter((house) => house.craftsman === selected && house.source === "สถานะบ้าน");
+    const houses = view.houses.filter(
+      (house) => house.craftsman === selected && house.source === "สถานะบ้าน" && (!unitOnly || house.flowUnit === "construction")
+    );
     const active = houses.filter((house) => house.houseStatus === "กำลังดำเนินงาน");
     const tickets = view.openTickets.filter((ticket) => ticket.craftsman === selected);
     const design = view.designJobs.filter((job) => job.owner === selected && job.phase !== "อนุมัติ" && job.phase !== "ไม่ออกแบบ");
     const overlaps = view.overlaps.filter((group) => group.craftsman === selected);
     const progress = view.houses.flatMap((house) => house.progress).filter((item) => item.craftsman === selected);
     return { houses, active, tickets, design, overlaps, progress };
-  }, [view, selected]);
+  }, [view, selected, unitOnly]);
 
   if (!view || !bundle) return <div className="p-4 sm:p-8 text-slate-500">กำลังโหลดคิวช่าง…</div>;
+
+  const queueHouses = unitOnly ? view.houses.filter((house) => house.flowUnit === "construction") : view.houses;
 
   function saveSchedule() {
     const when = [date, time].filter(Boolean).join(" ");
@@ -72,10 +78,15 @@ export default function CraftsmenPage() {
 
   return (
     <div className="p-4 sm:p-8 max-w-5xl space-y-4">
+      <UnitBanner unit="construction" note="คิวช่างและความคืบหน้ารูปของบ้านในงานก่อสร้าง ติ๊กออกเพื่อดูบ้านหน่วยอื่น" />
       <PageHead
         title="คิวช่าง"
         subtitle="จัดคิวจากบ้านที่กำลังทำ งานออกแบบที่ยังไม่จบ และแจ้งซ่อมที่ยังเปิด ระบบเตือนเมื่อช่างคนเดียวกันมีเวลานัดซ้ำ"
       />
+      <label className="flex min-h-11 items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" checked={unitOnly} onChange={(event) => setUnitOnly(event.target.checked)} />
+        แสดงเฉพาะบ้านในหน่วยงานก่อสร้าง
+      </label>
 
       {view.overlaps.length > 0 && (
         <section className="rounded-xl border border-red-200 bg-red-50 p-4">
@@ -153,7 +164,7 @@ export default function CraftsmenPage() {
         <div className="grid sm:grid-cols-2 gap-2">
           <Select value={houseId} onChange={(event) => setHouseId(event.target.value)}>
             <option value="">เลือกบ้าน</option>
-            {view.houses.map((house) => (
+            {queueHouses.map((house) => (
               <option key={house.id} value={house.id}>
                 {house.label}
               </option>
