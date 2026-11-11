@@ -4,12 +4,15 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useOps } from "@/components/ops/useOps";
 import { Empty, PageHead, Pill, TextInput } from "@/components/ops/ui";
+import { UnitBanner } from "@/components/units/chrome";
+import { UNIT_LABEL, type WorkspaceUnit } from "@/lib/units";
 
 export default function HousesPage() {
   const { view } = useOps();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("ทั้งหมด");
   const [project, setProject] = useState("ทั้งหมด");
+  const [unit, setUnit] = useState("ทั้งหมด");
 
   const projects = useMemo(() => {
     if (!view) return [];
@@ -21,10 +24,11 @@ export default function HousesPage() {
     return view.houses.filter((house) => {
       if (status !== "ทั้งหมด" && house.houseStatus !== status) return false;
       if (project !== "ทั้งหมด" && house.project !== project) return false;
+      if (unit !== "ทั้งหมด" && house.flowUnit !== unit) return false;
       const blob = `${house.label} ${house.type} ${house.craftsman} ${house.step}`.toLowerCase();
       return blob.includes(q.trim().toLowerCase());
     });
-  }, [view, q, status, project]);
+  }, [view, q, status, project, unit]);
 
   if (!view) return <div className="p-4 sm:p-8 text-slate-500">กำลังโหลดบ้าน…</div>;
 
@@ -32,9 +36,10 @@ export default function HousesPage() {
 
   return (
     <div className="p-4 sm:p-8">
+      <UnitBanner unit="sales" note="ทะเบียนบ้านใช้ร่วมกับทุกหน่วยงาน กรองตามหน่วยเพื่อดูว่าบ้านอยู่ที่ใคร" />
       <PageHead
         title="ลูกค้าและบ้าน"
-        subtitle="ชีตไม่มีทะเบียนลูกค้าแยก ระบบใช้โครงการเป็นกลุ่มลูกค้า และรวมประวัติบ้าน ข้อตกลง และเอกสารไว้หลังเดียวกัน"
+        subtitle="ระเบียนเดียวกันทั้งห้าหน่วยงาน สถานะหน่วยงานเปลี่ยนเมื่อส่งต่องาน ไม่ได้แยกฐานข้อมูล"
       />
       <div className="flex flex-wrap gap-2 mb-4">
         <TextInput className="max-w-xs" placeholder="ค้นโครงการ เลขที่ ช่าง" value={q} onChange={(event) => setQ(event.target.value)} />
@@ -43,6 +48,16 @@ export default function HousesPage() {
           {projects.map((name) => (
             <option key={name}>{name}</option>
           ))}
+        </select>
+        <select className="min-h-11 cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" value={unit} onChange={(event) => setUnit(event.target.value)} aria-label="กรองหน่วยงาน">
+          <option value="ทั้งหมด">ทุกหน่วยงาน</option>
+          {(Object.keys(UNIT_LABEL) as WorkspaceUnit[])
+            .filter((id) => id !== "stock")
+            .map((id) => (
+              <option key={id} value={id}>
+                {UNIT_LABEL[id]}
+              </option>
+            ))}
         </select>
         <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm" value={status} onChange={(event) => setStatus(event.target.value)}>
           <option>ทั้งหมด</option>
@@ -57,6 +72,7 @@ export default function HousesPage() {
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="text-left px-4 py-3 font-medium">กลุ่มลูกค้า / บ้าน</th>
+              <th className="text-left px-4 py-3 font-medium">หน่วยงาน</th>
               <th className="text-left px-4 py-3 font-medium">สถานะบ้าน</th>
               <th className="text-left px-4 py-3 font-medium">ขั้นงาน</th>
               <th className="text-left px-4 py-3 font-medium">ช่าง</th>
@@ -78,6 +94,9 @@ export default function HousesPage() {
                     {house.source}
                     {house.duplicate ? " · ข้อมูลซ้ำในชีต" : ""}
                   </div>
+                </td>
+                <td className="px-4 py-3">
+                  <Pill tone="blue">{house.unitLabel}</Pill>
                 </td>
                 <td className="px-4 py-3">
                   <div>{house.houseStatus}</div>

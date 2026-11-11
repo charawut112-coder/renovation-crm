@@ -106,7 +106,7 @@ export function Btn({
     <button
       {...props}
       className={clsx(
-        "rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50",
+        "min-h-11 cursor-pointer rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50",
         tone === "primary" ? "bg-brand-600 text-white hover:bg-brand-700" : "border border-slate-200 bg-white hover:bg-slate-50",
         props.className
       )}

@@ -72,13 +72,26 @@ export function MovementForm({
       </label>
       <label className="text-xs text-slate-500">
         บ้านที่ผูกต้นทุน
-        <Select className="mt-1" value={linkedHouse} onChange={(event) => setLinkedHouse(event.target.value)}>
+        <Select className="mt-1" value={linkedHouse} onChange={(event) => setLinkedHouse(event.target.value)} aria-label="บ้านที่ผูกต้นทุน">
           <option value="">ไม่ผูกบ้าน</option>
-          {view.houses.map((house) => (
-            <option key={house.id} value={house.id}>
-              {house.label}
-            </option>
-          ))}
+          <optgroup label="หน่วยงานก่อสร้าง — เบิกออกได้">
+            {view.houses
+              .filter((house) => house.flowUnit === "construction")
+              .map((house) => (
+                <option key={house.id} value={house.id}>
+                  {house.label}
+                </option>
+              ))}
+          </optgroup>
+          <optgroup label="หน่วยอื่น — ใช้กับรับเข้า คืน ย้ายคลัง">
+            {view.houses
+              .filter((house) => house.flowUnit !== "construction")
+              .map((house) => (
+                <option key={house.id} value={house.id}>
+                  {house.label} ({house.unitLabel})
+                </option>
+              ))}
+          </optgroup>
         </Select>
       </label>
       {type !== "รับเข้า" && (

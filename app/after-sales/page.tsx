@@ -31,6 +31,8 @@ import NewTicketModal, { type NewTicketInput } from "@/components/NewTicketModal
 import ReferralBoard from "@/components/ReferralBoard";
 import ScheduleList from "@/components/ScheduleList";
 import FieldServicePanel from "@/components/ops/FieldServicePanel";
+import { useOps } from "@/components/ops/useOps";
+import { HandoffPanel, RecentHandoffs, UnitBanner } from "@/components/units/chrome";
 
 type Tab = "field" | "warranties" | "tickets" | "followups" | "schedule" | "referrals";
 
@@ -44,6 +46,8 @@ export default function AfterSalesPage() {
   const [lineTarget, setLineTarget] = useState<FollowupItem | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string>("ทั้งหมด");
   const [reloadToken, setReloadToken] = useState(0);
+  const { view, reload: reloadOps } = useOps();
+  const [handoffId, setHandoffId] = useState<string | null>(null);
 
   function refresh() {
     setWarranties(loadWarranties());
@@ -191,6 +195,43 @@ export default function AfterSalesPage() {
 
   return (
     <div className="p-4 sm:p-8 relative max-w-6xl">
+      <UnitBanner unit="aftersales" note="ปลายทางของบ้านที่ขายและส่งมอบแล้ว ตั๋ว รับประกัน การติดตาม นัดช่าง และการปิดงานอยู่ที่นี่" />
+      {view && (
+        <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
+          <h2 className="font-semibold text-slate-900">บ้านในหน่วยบริการหลังการขาย</h2>
+          <p className="mt-1 text-sm text-slate-500">ระเบียนเดียวกับหน่วยอื่น ประวัติการส่งต่อดูได้จากทุกหน้า</p>
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {view.houses
+              .filter((house) => house.flowUnit === "aftersales" && !house.duplicate)
+              .slice(0, 12)
+              .map((house) => (
+                <button
+                  key={house.id}
+                  type="button"
+                  aria-pressed={handoffId === house.id}
+                  onClick={() => setHandoffId(house.id)}
+                  className="min-h-11 min-w-[180px] shrink-0 cursor-pointer rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left"
+                >
+                  <div className="text-sm font-medium text-slate-900">
+                    {house.project} {house.houseNo}
+                  </div>
+                  <div className="text-xs text-slate-500">เรื่องเปิด {house.openTickets}</div>
+                </button>
+              ))}
+          </div>
+          {view.houses.filter((house) => house.flowUnit === "aftersales" && !house.duplicate).length === 0 && (
+            <p className="text-sm text-slate-500">ยังไม่มีบ้านในหน่วยนี้ ส่งต่อจากงานขายเมื่อขายและยืนยันส่งมอบแล้ว</p>
+          )}
+          {handoffId && view.houses.find((house) => house.id === handoffId) && (
+            <div className="mt-3">
+              <HandoffPanel house={view.houses.find((house) => house.id === handoffId)!} onDone={reloadOps} />
+            </div>
+          )}
+          <div className="mt-4">
+            <RecentHandoffs view={view} unit="aftersales" />
+          </div>
+        </section>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">หลังการขาย</h1>

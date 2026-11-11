@@ -8,11 +8,18 @@ module.exports = {
     extend: {
       colors: {
         brand: {
-          50: '#f0f7ff',
-          100: '#e0effe',
-          500: '#2E75B6',
-          600: '#1F4E79',
-          700: '#163a5c',
+          50: '#eff6ff',
+          100: '#dbeafe',
+          500: '#2563EB',
+          600: '#1D4ED8',
+          700: '#1E3A8A',
+        },
+        unit: {
+          design: '#4338CA',
+          construction: '#C2410C',
+          sales: '#047857',
+          aftersales: '#0F766E',
+          stock: '#6D28D9',
         }
       }
     },

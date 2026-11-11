@@ -5,6 +5,7 @@ import Link from "next/link";
 import { StepEditor } from "@/components/ops/StepEditor";
 import { useOps } from "@/components/ops/useOps";
 import { Empty, PageHead, Pill, TextInput } from "@/components/ops/ui";
+import { UnitBanner } from "@/components/units/chrome";
 import { WORK_STEPS } from "@/lib/ops";
 import { formatIsoDate } from "@/lib/format";
 
@@ -13,6 +14,7 @@ export default function WorkPage() {
   const [q, setQ] = useState("");
   const [step, setStep] = useState("ทั้งหมด");
   const [lateOnly, setLateOnly] = useState(false);
+  const [unitOnly, setUnitOnly] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const rows = useMemo(() => {
@@ -20,15 +22,17 @@ export default function WorkPage() {
     return view.houses.filter((house) => {
       if (step !== "ทั้งหมด" && house.step !== step) return false;
       if (lateOnly && !house.late) return false;
+      if (unitOnly && house.flowUnit !== "construction") return false;
       const blob = `${house.label} ${house.stepOwner} ${house.craftsman}`.toLowerCase();
       return blob.includes(q.trim().toLowerCase());
     });
-  }, [view, q, step, lateOnly]);
+  }, [view, q, step, lateOnly, unitOnly]);
 
   if (!view) return <div className="p-4 sm:p-8 text-slate-500">กำลังโหลดสถานะงาน…</div>;
 
   return (
     <div className="p-4 sm:p-8">
+      <UnitBanner unit="construction" note="เลื่อนขั้นทีละขั้นได้ที่นี่ บ้านจะส่งต่อไปงานขายได้เมื่อถึงขั้นตรวจงานก่อนนำขาย" />
       <PageHead
         title="สถานะงานหลายหลัง"
         subtitle="เก้าขั้นเดียวกับไปป์ไลน์ขาย ผูกผู้รับผิดชอบและกำหนดส่งรายขั้น บ้านที่ไม่มีวันในชีตจะไม่ถูกนับว่าล่าช้าจนกว่าจะใส่วันหรือเข้าสถานะเลื่อนงาน"
@@ -57,6 +61,10 @@ export default function WorkPage() {
         <label className="flex items-center gap-2 text-sm text-slate-600">
           <input type="checkbox" checked={lateOnly} onChange={(event) => setLateOnly(event.target.checked)} />
           เฉพาะงานล่าช้า
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" checked={unitOnly} onChange={(event) => setUnitOnly(event.target.checked)} />
+          เฉพาะหน่วยงานก่อสร้าง
         </label>
       </div>
       {rows.length === 0 && <Empty title="ไม่มีบ้านในตัวกรองนี้" />}

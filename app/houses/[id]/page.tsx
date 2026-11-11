@@ -7,6 +7,7 @@ import { MovementForm } from "@/components/ops/MovementForm";
 import { StepEditor } from "@/components/ops/StepEditor";
 import { useOps } from "@/components/ops/useOps";
 import { Btn, Empty, Pill, TextInput } from "@/components/ops/ui";
+import { HandoffPanel } from "@/components/units/chrome";
 import { formatIsoDate, formatMoney, formatQty } from "@/lib/format";
 import { addHouseDoc } from "@/lib/opsStore";
 
@@ -42,7 +43,8 @@ export default function HouseDetailPage() {
           {house.soi ? <span className="text-slate-500 font-medium"> · {house.soi}</span> : null}
         </h1>
         <div className="flex flex-wrap gap-2 mt-2">
-          <Pill tone="blue">{house.houseStatus}</Pill>
+          <Pill tone="blue">{house.unitLabel}</Pill>
+          <Pill>{house.houseStatus}</Pill>
           <Pill>{house.step}</Pill>
           {house.late && <Pill tone="red">ล่าช้า</Pill>}
           {house.duplicate && <Pill tone="amber">แถวซ้ำในชีตสถานะบ้าน</Pill>}
@@ -68,6 +70,8 @@ export default function HouseDetailPage() {
           </ul>
         )}
       </section>
+
+      <HandoffPanel house={house} onDone={reload} />
 
       <section className="bg-white border border-slate-200 rounded-xl p-4">
         <h2 className="font-semibold mb-1">สถานะงานรายขั้น</h2>

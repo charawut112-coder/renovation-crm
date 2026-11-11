@@ -5,6 +5,7 @@ import Link from "next/link";
 import { MovementForm } from "@/components/ops/MovementForm";
 import { useOps } from "@/components/ops/useOps";
 import { Btn, Empty, PageHead, Pill, TextInput } from "@/components/ops/ui";
+import { RecentHandoffs, UnitBanner } from "@/components/units/chrome";
 import { formatMoney, formatQty } from "@/lib/format";
 import { setPoPrice, setPoStatus } from "@/lib/opsStore";
 
@@ -15,6 +16,7 @@ export default function StockPage() {
   const [tab, setTab] = useState<Tab>("stock");
   const [q, setQ] = useState("");
   const [lowOnly, setLowOnly] = useState(false);
+  const [buildOnly, setBuildOnly] = useState(true);
 
   const materials = useMemo(() => {
     if (!view) return [];
@@ -34,12 +36,17 @@ export default function StockPage() {
     { id: "cost", label: "ต้นทุนรายบ้าน" },
   ];
 
-  const costRows = view.houses.filter((house) => house.isCostOwner && (house.purchaseLines.length > 0 || house.stockCost !== 0));
+  const costRows = view.houses.filter((house) => {
+    if (!house.isCostOwner) return false;
+    if (buildOnly && house.flowUnit !== "construction") return false;
+    return house.purchaseLines.length > 0 || house.stockCost !== 0;
+  });
 
   return (
     <div className="p-4 sm:p-8">
+      <UnitBanner unit="stock" note="เบิกวัสดุออกจากคลังได้เฉพาะบ้านที่อยู่ในงานก่อสร้าง ต้นทุนรายบ้านคิดจากรายการที่ผูกบ้านหลังนั้น" />
       <PageHead
-        title="วัสดุ สต็อก และต้นทุน"
+        title="สต็อกวัสดุและจัดซื้อวัสดุ"
         subtitle={`คงเหลือคำนวณจากชีตสต็อก แล้วบวกการรับเข้า เบิกออก ย้ายคลัง คืน และเคลมที่บันทึกในแอป ถึงจุดสั่งซื้อเมื่อคงเหลือ ≤ จุดสั่งซื้อ (${view.lowStock.length} รายการ)`}
       />
       <div className="flex gap-1 border-b border-slate-200 mb-4 overflow-x-auto">
@@ -231,8 +238,12 @@ export default function StockPage() {
 
       {tab === "cost" && (
         <div className="space-y-3">
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            <input type="checkbox" checked={buildOnly} onChange={(event) => setBuildOnly(event.target.checked)} />
+            แสดงบ้านในงานก่อสร้าง
+          </label>
           {costRows.length === 0 && (
-            <Empty title="ยังไม่มีต้นทุนผูกบ้าน">เบิกวัสดุโดยเลือกบ้าน หรือกรอกราคาในใบสั่งซื้อ</Empty>
+            <Empty title="ยังไม่มีต้นทุนผูกบ้านในตัวกรองนี้">เบิกวัสดุโดยเลือกบ้านที่กำลังก่อสร้าง หรือกรอกราคาในใบสั่งซื้อ</Empty>
           )}
           <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
             <table className="w-full text-sm min-w-[720px]">
@@ -252,6 +263,7 @@ export default function StockPage() {
                       <Link href={`/houses/${house.id}`} className="text-brand-600 hover:underline">
                         {house.label}
                       </Link>
+                      <div className="text-[11px] text-slate-400">{house.unitLabel}</div>
                     </td>
                     <td className="px-4 py-3 text-right">{formatMoney(house.stockCost)}</td>
                     <td className="px-4 py-3 text-right">{formatMoney(house.poCost)}</td>

@@ -11,6 +11,21 @@ import {
   type CatalogTicket,
 } from "./buildspace";
 import { formatMoney, isPastDate, todayIso, uid } from "./format";
+import {
+  defaultSalesLead,
+  deriveFlowUnit,
+  handoffChecklist,
+  materialIssueAllowed,
+  resolveFlowUnit,
+  UNIT_HREF,
+  UNIT_LABEL,
+  type DesignPhaseName,
+  type FlowUnit,
+  type HandoffPlan,
+  type SalesLead,
+  type UnitAssignment,
+  type UnitMove,
+} from "./units";
 
 export const WORK_STEPS: PropertyStatus[] = PIPELINE_STATUSES;
 
@@ -129,6 +144,8 @@ export type OpsState = {
   schedules: ScheduleEntry[];
   progress: ProgressEntry[];
   docs: Record<string, Attachment[]>;
+  /** สถานะหน่วยงานต่อบ้าน — บ้านหลังเดียวกัน ส่งต่องานด้วยการเปลี่ยนหน่วย */
+  units: Record<string, UnitAssignment>;
 };
 
 export const OPS_STORAGE_KEY = "buildspace-ops-v1";
@@ -144,6 +161,7 @@ export function emptyOpsState(): OpsState {
     schedules: [],
     progress: [],
     docs: {},
+    units: {},
   };
 }
 
@@ -285,6 +303,14 @@ export type HouseView = {
   /** หลังแรกของโครงการ+เลขที่ — ใช้รวมต้นทุนไม่ให้แถวซ้ำในชีตถูกนับสองรอบ */
   isCostOwner: boolean;
   progress: ProgressEntry[];
+  flowUnit: FlowUnit;
+  unitLabel: string;
+  unitHref: string;
+  salesLead: SalesLead;
+  salesCustomer: string;
+  handoverConfirmed: boolean;
+  unitHistory: UnitMove[];
+  handoff: HandoffPlan;
 };
 
 export type OverlapGroup = {
@@ -316,6 +342,7 @@ export type OpsView = {
   overlaps: OverlapGroup[];
   appointments: { id: string; craftsman: string; when: string; houseLabel: string; label: string }[];
   lateItems: LateItem[];
+  unitMoves: { id: string; houseId: string; label: string; move: UnitMove }[];
   kpis: {
     housesOnSheet: number;
     byHouseStatus: { status: string; count: number }[];
@@ -324,6 +351,7 @@ export type OpsView = {
     openAfterSales: number;
     lowStock: number;
     stockValue: number;
+    byUnit: { id: string; label: string; count: number; late: number; bottleneck: string; href: string }[];
   };
 };
 
@@ -600,6 +628,31 @@ export function assemble(state: OpsState, today = todayIso()): OpsView {
       };
     }
 
+    const storedUnit = state.units[house.id];
+    const designPhase = (design?.phase as DesignPhaseName | undefined) || null;
+    const flowUnit = resolveFlowUnit(
+      storedUnit?.unit,
+      deriveFlowUnit({
+        houseStatus: house.houseStatus,
+        step,
+        designPhase,
+        openTickets: openTickets.length,
+      })
+    );
+    const salesLead = storedUnit?.salesLead || (flowUnit === "sales" ? defaultSalesLead(house.houseStatus) : "ลีด");
+    const salesCustomer = storedUnit?.salesCustomer || "";
+    const handoverConfirmed = Boolean(storedUnit?.handoverConfirmed);
+    const hasHandoverDoc = docs.some((doc) => doc.id === "handover" && doc.file);
+    const handoff = handoffChecklist({
+      unit: flowUnit,
+      designPhase,
+      step,
+      salesLead,
+      handoverConfirmed,
+      hasHandoverDoc,
+    });
+    const unitHistory = storedUnit?.history || [];
+
     const history: HistoryEvent[] = [];
     history.push({
       id: `${house.id}-status`,
@@ -656,6 +709,22 @@ export function assemble(state: OpsState, today = todayIso()): OpsView {
         at: event.at.slice(0, 10),
       });
     }
+    if (unitHistory.length === 0) {
+      history.unshift({
+        id: `${house.id}-unit-seed`,
+        title: `หน่วยงาน ${UNIT_LABEL[flowUnit]}`,
+        detail: "เริ่มที่หน่วยนี้ตามสถานะในชีต ยังไม่มีการส่งต่อ",
+        at: "",
+      });
+    }
+    for (const move of unitHistory) {
+      history.push({
+        id: `${house.id}-unit-${move.at}`,
+        title: `ส่งต่อ ${UNIT_LABEL[move.from]} → ${UNIT_LABEL[move.to]}`,
+        detail: [move.note, move.by].filter(Boolean).join(" · "),
+        at: move.at.slice(0, 10),
+      });
+    }
 
     return {
       id: house.id,
@@ -691,6 +760,14 @@ export function assemble(state: OpsState, today = todayIso()): OpsView {
       totalCost: stockCost + poCost,
       isCostOwner: costOwner,
       progress: state.progress.filter((item) => item.houseId === house.id),
+      flowUnit,
+      unitLabel: UNIT_LABEL[flowUnit],
+      unitHref: UNIT_HREF[flowUnit],
+      salesLead,
+      salesCustomer,
+      handoverConfirmed,
+      unitHistory,
+      handoff,
     };
   });
 
@@ -828,6 +905,43 @@ export function assemble(state: OpsState, today = todayIso()): OpsView {
   for (const ticket of tickets) if (ticket.craftsman) names.add(ticket.craftsman);
   for (const job of designJobs) if (job.owner) names.add(job.owner);
 
+  const countable = houses.filter((house) => {
+    if (house.duplicate) return false;
+    // แถวชีตโครงการที่ไม่มีสถานะบ้านและไม่มีใบงาน ไม่ใช่คิวของหน่วยงาน
+    if (
+      house.source === "โครงการ" &&
+      house.houseStatus === "ไม่มีในชีตสถานะบ้าน" &&
+      !house.design &&
+      house.openTickets === 0
+    ) {
+      return false;
+    }
+    return true;
+  });
+  const inUnit = (id: FlowUnit) => countable.filter((house) => house.flowUnit === id);
+  const designHouses = inUnit("design");
+  const buildHouses = inUnit("construction");
+  const salesHouses = inUnit("sales");
+  const afterHouses = inUnit("aftersales");
+  const designLate = designHouses.filter((house) => house.design?.late).length;
+  const buildLate = buildHouses.filter(
+    (house) => house.steps.some((step) => step.late) || house.siteStatus.includes("รอ")
+  ).length;
+  const salesStuck = salesHouses.filter(
+    (house) => !house.salesCustomer.trim() && (house.salesLead === "ลีด" || house.salesLead === "นัดดูบ้าน")
+  ).length;
+  const afterOpen = afterHouses.reduce((sum, house) => sum + house.openTickets, 0);
+  const unitMoves = houses
+    .flatMap((house) =>
+      house.unitHistory.map((move, index) => ({
+        id: `${house.id}-${move.at}-${index}`,
+        houseId: house.id,
+        label: house.label,
+        move,
+      }))
+    )
+    .sort((a, b) => b.move.at.localeCompare(a.move.at));
+
   const locations = new Set<string>(["คลังกลาง", "คลังโฮมโปร"]);
   for (const row of catalog.stock) locations.add(row.location);
   for (const move of state.movements) {
@@ -856,6 +970,7 @@ export function assemble(state: OpsState, today = todayIso()): OpsView {
       label: slot.label,
     })),
     lateItems,
+    unitMoves,
     kpis: {
       housesOnSheet: sheetHouses.length,
       byHouseStatus: Array.from(statusCount.entries()).map(([status, count]) => ({ status, count })),
@@ -864,6 +979,48 @@ export function assemble(state: OpsState, today = todayIso()): OpsView {
       openAfterSales: openTickets.length,
       lowStock: lowStock.length,
       stockValue: materials.reduce((sum, item) => sum + item.stockValue, 0),
+      byUnit: [
+        {
+          id: "design",
+          label: UNIT_LABEL.design,
+          count: designHouses.length,
+          late: designLate,
+          bottleneck: designLate ? `แบบค้างตรวจหรือต้องแก้ ${designLate} หลัง` : "ไม่มีแบบค้างในหน่วยนี้",
+          href: UNIT_HREF.design,
+        },
+        {
+          id: "construction",
+          label: UNIT_LABEL.construction,
+          count: buildHouses.length,
+          late: buildLate,
+          bottleneck: buildLate ? `ก่อสร้างเลยกำหนดหรือรอของเข้า ${buildLate} หลัง` : "ไม่มีงานก่อสร้างที่ติด",
+          href: UNIT_HREF.construction,
+        },
+        {
+          id: "sales",
+          label: UNIT_LABEL.sales,
+          count: salesHouses.length,
+          late: salesStuck,
+          bottleneck: salesStuck ? `ยังไม่ระบุชื่อลูกค้า ${salesStuck} หลัง` : "ลีดในหน่วยขายมีชื่อลูกค้าแล้ว",
+          href: UNIT_HREF.sales,
+        },
+        {
+          id: "aftersales",
+          label: UNIT_LABEL.aftersales,
+          count: afterHouses.length,
+          late: afterOpen,
+          bottleneck: afterOpen ? `เรื่องซ่อมที่ยังไม่ปิด ${afterOpen} เรื่อง` : "ไม่มีเรื่องซ่อมค้างในหน่วยนี้",
+          href: UNIT_HREF.aftersales,
+        },
+        {
+          id: "stock",
+          label: UNIT_LABEL.stock,
+          count: lowStock.length,
+          late: lowStock.length,
+          bottleneck: lowStock.length ? `ถึงจุดสั่งซื้อ ${lowStock.length} รายการ` : "สต็อกอยู่เหนือจุดสั่งซื้อ",
+          href: UNIT_HREF.stock,
+        },
+      ],
     },
   };
 }
@@ -885,6 +1042,11 @@ export function movementError(state: OpsState, move: UserMovement): string | nul
   }
   if (move.type === "ย้ายคลัง" && move.from === move.to) return "คลังต้นทางและปลายทางต้องต่างกัน";
   if ((move.type === "เบิกออก" || move.type === "คืน") && !move.houseId) return "ผูกบ้านเพื่อคิดต้นทุน";
+  if (move.type === "เบิกออก" && move.houseId) {
+    const house = view.houses.find((item) => item.id === move.houseId);
+    if (!house) return "ไม่พบบ้านที่ผูกกับรายการเบิก";
+    if (!materialIssueAllowed(house.flowUnit)) return "เบิกวัสดุได้เฉพาะบ้านที่อยู่ในหน่วยงานก่อสร้าง";
+  }
   return null;
 }
 
