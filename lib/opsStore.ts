@@ -53,6 +53,16 @@ function update(mutator: (state: OpsState) => void): OpsState {
   return state;
 }
 
+/** เก็บหน่วยปัจจุบันไว้ก่อนแก้ขั้น แบบ หรือตั๋ว เพื่อไม่ให้การคำนวณจากชีตย้ายบ้านเอง */
+function pinFlowUnit(state: OpsState, houseId: string) {
+  if (!houseId || state.units[houseId]?.unit) return;
+  const house = assemble(state).houses.find((item) => item.id === houseId);
+  if (!house) return;
+  const current = state.units[houseId] || { history: [] };
+  current.unit = house.flowUnit;
+  state.units[houseId] = current;
+}
+
 export function setHouseStep(input: {
   houseId: string;
   to: PropertyStatus;
@@ -63,6 +73,7 @@ export function setHouseStep(input: {
 }): string | null {
   if (input.from === input.to) return null;
   update((state) => {
+    pinFlowUnit(state, input.houseId);
     const current = state.steps[input.houseId] || { dues: {}, owners: {}, history: [] };
     current.step = input.to;
     current.history = [
@@ -87,21 +98,12 @@ export function setStepMeta(houseId: string, step: PropertyStatus, patch: { owne
 
 export function setDesignPhase(id: string, phase: DesignPhase, note: string) {
   update((state) => {
+    const houseId = assemble(state).designJobs.find((job) => job.id === id)?.houseId || "";
+    pinFlowUnit(state, houseId);
     const current = state.design[id] || { history: [], attachments: [] };
     current.phase = phase;
     current.history = [...(current.history || []), { at: new Date().toISOString(), phase, note, by: "ทีมงาน" }];
     state.design[id] = current;
-    // อนุมัติแบบยังไม่ย้ายหน่วยเอง ต้องกดส่งต่อ ไม่งั้นบ้านจะหายจากบอร์ดออกแบบทันที
-    if (phase === "อนุมัติ" || phase === "ไม่ออกแบบ") {
-      const view = assemble(state);
-      const houseId = view.designJobs.find((job) => job.id === id)?.houseId;
-      if (!houseId) return;
-      const assignment = state.units[houseId] || { history: [] };
-      if (!assignment.unit || assignment.unit === "design") {
-        assignment.unit = "design";
-        state.units[houseId] = assignment;
-      }
-    }
   });
 }
 
@@ -168,9 +170,9 @@ export function handoffHouse(houseId: string, note: string): { ok: true; toLabel
 
 export function setSalesLead(houseId: string, salesLead: SalesLead) {
   update((state) => {
+    pinFlowUnit(state, houseId);
     const current = state.units[houseId] || { history: [] };
     current.salesLead = salesLead;
-    if (!current.unit) current.unit = "sales";
     state.units[houseId] = current;
   });
 }
@@ -237,6 +239,12 @@ export function updateTicket(
   }
 ) {
   update((state) => {
+    if (patch.status || patch.closeConfirmed !== undefined) {
+      const view = assemble(state);
+      for (const house of view.houses) {
+        if (house.tickets.some((ticket) => ticket.id === ticketId)) pinFlowUnit(state, house.id);
+      }
+    }
     const current = state.tickets[ticketId] || { evidence: [] };
     if (patch.status) current.status = patch.status;
     if (patch.craftsman !== undefined) current.craftsman = patch.craftsman;

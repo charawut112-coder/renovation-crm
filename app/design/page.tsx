@@ -64,7 +64,10 @@ export default function DesignPage() {
               <CardButton
                 key={job.id}
                 pressed={openId === job.id}
-                onClick={() => setOpenId(job.id)}
+                onClick={() => {
+                  setOpenId(job.id);
+                  setNote("");
+                }}
                 title={`${job.project} ${job.houseNo}`}
                 meta={`${job.owner || "ไม่มีผู้รับผิดชอบ"}${job.due ? ` · ส่ง ${formatIsoDate(job.due)}` : ""}`}
                 tags={
@@ -126,6 +129,7 @@ export default function DesignPage() {
               </div>
             </div>
             <DesignMeta
+              key={selected.id}
               jobId={selected.id}
               owner={selected.owner}
               due={selected.due}

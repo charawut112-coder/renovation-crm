@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertCircle, Check } from "lucide-react";
 import clsx from "clsx";
 import { Btn, Empty, TextInput } from "@/components/ops/ui";
@@ -148,6 +148,12 @@ export function HandoffPanel({ house, onDone }: { house: HouseView; onDone: () =
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const ready = Boolean(house.handoff.next) && house.handoff.blockers.length === 0;
+
+  useEffect(() => {
+    setNote("");
+    setError(null);
+    setDone(null);
+  }, [house.id]);
 
   function send() {
     const result = handoffHouse(house.id, note);
